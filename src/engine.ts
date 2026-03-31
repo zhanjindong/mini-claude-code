@@ -195,13 +195,13 @@ export class QueryEngine {
             tool_call_id: tc.id,
             content: `Error: Invalid JSON in tool arguments`,
           });
-          yield { type: "tool", content: `\n${chalk.red("✗")} ${chalk.bold(toolName)} ${chalk.red("Invalid JSON arguments")}\n` };
+          yield { type: "tool", content: `${chalk.red("✗")} ${chalk.bold(toolName)} ${chalk.red("Invalid JSON arguments")}\n` };
           continue;
         }
 
         // Show tool invocation header
         const inputSummary = formatToolInput(toolName, parsedInput);
-        yield { type: "tool", content: `\n${chalk.cyan("⚡")} ${chalk.bold(toolName)}${inputSummary ? chalk.dim(` ${inputSummary}`) : ""}\n` };
+        yield { type: "tool", content: `${chalk.cyan("⚡")} ${chalk.bold(toolName)}${inputSummary ? chalk.dim(` ${inputSummary}`) : ""}\n` };
 
         // Execute
         const tool = getToolByName(toolName);
