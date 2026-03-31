@@ -118,7 +118,7 @@ ${chalk.bold("REPL Commands:")}
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: "\n" + chalk.blue("❯ "),
+    prompt: "\n" + chalk.dim("─".repeat(50)) + "\n" + chalk.blue("❯ "),
     terminal: true,
   });
 
@@ -242,6 +242,8 @@ ${chalk.bold("REPL Commands:")}
       rl.prompt();
       return;
     }
+
+    console.log(chalk.dim("─".repeat(50)));
 
     if (input.startsWith("/")) {
       // Built-in commands (sync, no API call)
