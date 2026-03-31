@@ -328,6 +328,15 @@ function createSpinner() {
 async function runQuery(engine: QueryEngine, input: string) {
   let textBuffer = "";
   const spinner = createSpinner();
+  const abortController = new AbortController();
+
+  // Listen for Escape key to abort
+  const onKeypress = (_str: string, key: any) => {
+    if (key?.name === "escape") {
+      abortController.abort();
+    }
+  };
+  process.stdin.on("keypress", onKeypress);
 
   function flushText() {
     if (!textBuffer) return;
@@ -336,10 +345,16 @@ async function runQuery(engine: QueryEngine, input: string) {
     textBuffer = "";
   }
 
+  function cleanup() {
+    spinner.stop();
+    process.stdin.removeListener("keypress", onKeypress);
+  }
+
   spinner.start();
 
   try {
-    for await (const chunk of engine.query(input)) {
+    for await (const chunk of engine.query(input, abortController.signal)) {
+      if (abortController.signal.aborted) break;
       spinner.stop();
       if (chunk.type === "text") {
         textBuffer += chunk.content;
@@ -351,12 +366,17 @@ async function runQuery(engine: QueryEngine, input: string) {
         spinner.start();
       }
     }
-    spinner.stop();
+    cleanup();
     flushText();
+    if (abortController.signal.aborted) {
+      process.stdout.write(chalk.dim("\n(interrupted)\n"));
+    }
   } catch (err: any) {
-    spinner.stop();
+    cleanup();
     flushText();
-    if (err.status === 401) {
+    if (abortController.signal.aborted) {
+      process.stdout.write(chalk.dim("\n(interrupted)\n"));
+    } else if (err.status === 401) {
       console.error(chalk.red("\nAuthentication failed. Check your API key."));
     } else if (err.status === 429) {
       console.error(chalk.red("\nRate limited. Please wait and try again."));

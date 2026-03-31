@@ -93,10 +93,12 @@ export class QueryEngine {
   }
 
   // Core query loop: send → stream → execute tools → repeat
-  async *query(userMessage: string): AsyncGenerator<EngineChunk> {
+  async *query(userMessage: string, signal?: AbortSignal): AsyncGenerator<EngineChunk> {
     this.messages.push({ role: "user", content: userMessage });
 
     while (true) {
+      if (signal?.aborted) break;
+
       const stream = await this.client.chat.completions.create({
         model: this.model,
         max_tokens: this.maxTokens,
@@ -117,6 +119,7 @@ export class QueryEngine {
       }> = [];
 
       for await (const chunk of stream) {
+        if (signal?.aborted) break;
         const delta = chunk.choices[0]?.delta;
         if (!delta) continue;
 
@@ -181,9 +184,11 @@ export class QueryEngine {
 
       // No tool calls → done
       if (toolCalls.length === 0) break;
+      if (signal?.aborted) break;
 
       // Execute each tool
       for (const tc of toolCalls) {
+        if (signal?.aborted) break;
         const toolName = tc.function.name;
         let parsedInput: Record<string, unknown>;
 
