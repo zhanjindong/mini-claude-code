@@ -232,10 +232,14 @@ ${chalk.bold("REPL Commands:")}
 
   rl.prompt();
 
+  let busy = false;
+
   rl.on("line", async (line) => {
     // Menu may have left rendered lines — ensure cleanup
     clearMenu();
     menuFiltered = [];
+
+    if (busy) return;
 
     const input = line.trim();
     if (!input) {
@@ -260,9 +264,9 @@ ${chalk.bold("REPL Commands:")}
         const argsStr = spaceIdx === -1 ? undefined : input.slice(spaceIdx + 1).trim() || undefined;
         const expanded = executeSkill(skill, argsStr);
         console.log(chalk.cyan(`> /${skill.name}`) + (argsStr ? chalk.dim(` ${argsStr}`) : ""));
-        rl.pause();
+        busy = true;
         await runQuery(engine, expanded);
-        rl.resume();
+        busy = false;
         rl.prompt();
         return;
       }
@@ -272,9 +276,9 @@ ${chalk.bold("REPL Commands:")}
       return;
     }
 
-    rl.pause();
+    busy = true;
     await runQuery(engine, input);
-    rl.resume();
+    busy = false;
     rl.prompt();
   });
 
