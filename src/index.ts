@@ -113,6 +113,7 @@ ${chalk.bold("REPL Commands:")}
     input: process.stdin,
     output: process.stdout,
     prompt: chalk.blue("\n❯ "),
+    terminal: true,
     completer(line: string) {
       if (line.startsWith("/")) {
         const hits = allCmds.filter((c) => c.startsWith(line.toLowerCase()));
