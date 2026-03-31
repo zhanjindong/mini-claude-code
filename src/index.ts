@@ -104,10 +104,22 @@ ${chalk.bold("REPL Commands:")}
   // REPL mode
   printBanner(engine, skills);
 
+  // All completable slash commands
+  const builtinCmds = ["/help", "/clear", "/cost", "/skills", "/exit", "/quit"];
+  const skillCmds = skills.map((s) => "/" + s.name);
+  const allCmds = [...builtinCmds, ...skillCmds];
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: chalk.blue("\n❯ "),
+    completer(line: string) {
+      if (line.startsWith("/")) {
+        const hits = allCmds.filter((c) => c.startsWith(line.toLowerCase()));
+        return [hits.length ? hits : allCmds, line];
+      }
+      return [[], line];
+    },
   });
 
   rl.prompt();
