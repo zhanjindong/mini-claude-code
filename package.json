@@ -1,0 +1,26 @@
+{
+  "name": "mini-claude-code",
+  "version": "0.1.0",
+  "description": "A minimal Claude Code-like CLI tool",
+  "type": "module",
+  "bin": {
+    "mcc": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node --loader ts-node/esm src/index.ts",
+    "dev": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "openai": "^4.78.0",
+    "chalk": "^5.4.1",
+    "glob": "^11.0.1",
+    "marked": "^15.0.0",
+    "marked-terminal": "^7.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
