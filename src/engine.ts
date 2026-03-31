@@ -99,16 +99,19 @@ export class QueryEngine {
     while (true) {
       if (signal?.aborted) break;
 
-      const stream = await this.client.chat.completions.create({
-        model: this.model,
-        max_tokens: this.maxTokens,
-        stream: true,
-        messages: [
-          { role: "system", content: buildSystemPrompt(this.skillsSummary) },
-          ...this.messages,
-        ],
-        tools: toOpenAITools(),
-      });
+      const stream = await this.client.chat.completions.create(
+        {
+          model: this.model,
+          max_tokens: this.maxTokens,
+          stream: true,
+          messages: [
+            { role: "system", content: buildSystemPrompt(this.skillsSummary) },
+            ...this.messages,
+          ],
+          tools: toOpenAITools(),
+        },
+        { signal }
+      );
 
       let assistantContent = "";
       let inThinkTag = false; // Filter <think>...</think> tags from some models
