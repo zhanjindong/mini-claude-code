@@ -110,7 +110,12 @@ export function substituteArgs(body: string, argDefs: string[] | undefined, args
 
   for (let i = 0; i < argDefs.length; i++) {
     const placeholder = new RegExp(`\\{\\{\\s*${argDefs[i]}\\s*\\}\\}`, "g");
-    result = result.replace(placeholder, values[i] || "");
+    // Last argument consumes all remaining text
+    const value =
+      i === argDefs.length - 1
+        ? values.slice(i).join(" ")
+        : values[i] || "";
+    result = result.replace(placeholder, value);
   }
   return result;
 }

@@ -120,11 +120,32 @@ ${chalk.bold("REPL Commands:")}
     }
 
     if (input.startsWith("/")) {
-      const handled = await handleCommand(input, engine, rl, skills);
-      if (handled) {
+      // Built-in commands (sync, no API call)
+      if (handleBuiltinCommand(input, engine, rl, skills)) {
         rl.prompt();
         return;
       }
+
+      // Skill invocation: /skill-name [args]
+      const spaceIdx = input.indexOf(" ");
+      const cmdWord = (spaceIdx === -1 ? input : input.slice(0, spaceIdx)).toLowerCase();
+      const skillName = cmdWord.slice(1);
+      const skill = skills.find((s) => s.name.toLowerCase() === skillName);
+
+      if (skill) {
+        const argsStr = spaceIdx === -1 ? undefined : input.slice(spaceIdx + 1).trim() || undefined;
+        const expanded = executeSkill(skill, argsStr);
+        console.log(chalk.cyan(`\n> /${skill.name}`) + (argsStr ? chalk.dim(` ${argsStr}`) : ""));
+        rl.pause();
+        await runQuery(engine, expanded);
+        rl.resume();
+        rl.prompt();
+        return;
+      }
+
+      console.log(chalk.yellow(`Unknown command: ${input}. Type /help for help.`));
+      rl.prompt();
+      return;
     }
 
     rl.pause();
@@ -157,50 +178,52 @@ async function runQuery(engine: QueryEngine, input: string) {
   }
 }
 
-async function handleCommand(
+function handleBuiltinCommand(
   input: string,
   engine: QueryEngine,
   rl: readline.Interface,
   skills: Skill[]
-): Promise<boolean> {
-  const parts = input.split(/\s+/);
-  const cmd = parts[0].toLowerCase();
+): boolean {
+  const cmd = input.split(/\s+/)[0].toLowerCase();
 
-  if (cmd === "/exit" || cmd === "/quit") {
-    rl.close();
-    return true;
-  }
-  if (cmd === "/clear") {
-    engine.clearHistory();
-    console.log(chalk.green("Conversation cleared."));
-    return true;
-  }
-  if (cmd === "/cost") {
-    const usage = engine.tokenUsage;
-    console.log(chalk.bold("\nToken Usage:"));
-    console.log(`  Input:  ${usage.input.toLocaleString()} tokens`);
-    console.log(`  Output: ${usage.output.toLocaleString()} tokens`);
-    return true;
-  }
-  if (cmd === "/skills") {
-    if (skills.length === 0) {
-      console.log(chalk.dim("\nNo skills loaded."));
-    } else {
-      console.log(chalk.bold("\nLoaded Skills:"));
-      for (const s of skills) {
-        const src = chalk.dim(`[${s.source}]`);
-        console.log(`  /${s.name} ${src} ${s.description || ""}`);
-      }
+  switch (cmd) {
+    case "/exit":
+    case "/quit":
+      rl.close();
+      return true;
+
+    case "/clear":
+      engine.clearHistory();
+      console.log(chalk.green("Conversation cleared."));
+      return true;
+
+    case "/cost": {
+      const usage = engine.tokenUsage;
+      console.log(chalk.bold("\nToken Usage:"));
+      console.log(`  Input:  ${usage.input.toLocaleString()} tokens`);
+      console.log(`  Output: ${usage.output.toLocaleString()} tokens`);
+      return true;
     }
-    console.log(
-      chalk.dim(
-        `\nSkill directories:\n  Project: .mini-claude-code/skills/\n  User:    ~/.mini-claude-code/skills/`
-      )
-    );
-    return true;
-  }
-  if (cmd === "/help") {
-    console.log(`
+
+    case "/skills":
+      if (skills.length === 0) {
+        console.log(chalk.dim("\nNo skills loaded."));
+      } else {
+        console.log(chalk.bold("\nLoaded Skills:"));
+        for (const s of skills) {
+          const src = chalk.dim(`[${s.source}]`);
+          console.log(`  /${s.name} ${src} ${s.description || ""}`);
+        }
+      }
+      console.log(
+        chalk.dim(
+          `\nSkill directories:\n  Project: .mini-claude-code/skills/\n  User:    ~/.mini-claude-code/skills/`
+        )
+      );
+      return true;
+
+    case "/help":
+      console.log(`
 ${chalk.bold("Commands:")}
   /clear    Clear conversation history
   /cost     Show token usage
@@ -209,25 +232,11 @@ ${chalk.bold("Commands:")}
   /help     Show this help
 ${skills.length > 0 ? `\n${chalk.bold("Skills:")} ${skills.map((s) => "/" + s.name).join(", ")}` : ""}
 `);
-    return true;
-  }
+      return true;
 
-  // Check if it matches a skill name
-  const skillName = cmd.slice(1); // remove leading /
-  const skill = skills.find(
-    (s) => s.name.toLowerCase() === skillName
-  );
-  if (skill) {
-    const argsStr = parts.slice(1).join(" ") || undefined;
-    const expanded = executeSkill(skill, argsStr);
-    rl.pause();
-    await runQuery(engine, expanded);
-    rl.resume();
-    return true;
+    default:
+      return false;
   }
-
-  console.log(chalk.yellow(`Unknown command: ${input}. Type /help for help.`));
-  return true;
 }
 
 function printBanner(engine: QueryEngine, skills: Skill[]) {
