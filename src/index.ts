@@ -118,7 +118,7 @@ ${chalk.bold("REPL Commands:")}
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: chalk.dim("─".repeat(50)) + "\n" + chalk.blue("❯ "),
+    prompt: "\n" + chalk.dim("─".repeat(50)) + "\n" + chalk.blue("❯ "),
     terminal: true,
   });
 
@@ -333,7 +333,7 @@ async function runQuery(engine: QueryEngine, input: string) {
 
   function flushText() {
     if (!textBuffer) return;
-    const rendered = renderMarkdown(textBuffer).replace(/\n{3,}/g, "\n\n").trimEnd();
+    const rendered = renderMarkdown(textBuffer.trim()).replace(/\n{3,}/g, "\n\n").trimEnd();
     process.stdout.write(rendered + "\n");
     textBuffer = "";
   }
