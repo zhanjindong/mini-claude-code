@@ -5,13 +5,10 @@
 
 import * as readline from "readline";
 import chalk from "chalk";
-import { Marked } from "marked";
-import { markedTerminal } from "marked-terminal";
 import { QueryEngine, type EngineOptions } from "./engine.js";
 import { initSkills } from "./tools/index.js";
 import { executeSkill, type Skill } from "./skills.js";
-
-const md = new Marked(markedTerminal() as any);
+import { renderMarkdown } from "./markdown.js";
 
 const VERSION = "0.1.0";
 
@@ -287,9 +284,7 @@ async function runQuery(engine: QueryEngine, input: string) {
 
   function flushText() {
     if (!textBuffer) return;
-    const rendered = md.parse(textBuffer) as string;
-    // marked-terminal may add trailing newlines; trim excess
-    process.stdout.write(rendered.replace(/\n{3,}$/g, "\n"));
+    process.stdout.write(renderMarkdown(textBuffer));
     textBuffer = "";
   }
 
