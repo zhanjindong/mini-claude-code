@@ -5,9 +5,13 @@
 
 import * as readline from "readline";
 import chalk from "chalk";
+import { Marked } from "marked";
+import { markedTerminal } from "marked-terminal";
 import { QueryEngine, type EngineOptions } from "./engine.js";
 import { initSkills } from "./tools/index.js";
 import { executeSkill, type Skill } from "./skills.js";
+
+const md = new Marked(markedTerminal() as any);
 
 const VERSION = "0.1.0";
 
@@ -279,12 +283,29 @@ ${chalk.bold("REPL Commands:")}
 
 async function runQuery(engine: QueryEngine, input: string) {
   process.stdout.write("\n");
+  let textBuffer = "";
+
+  function flushText() {
+    if (!textBuffer) return;
+    const rendered = md.parse(textBuffer) as string;
+    // marked-terminal may add trailing newlines; trim excess
+    process.stdout.write(rendered.replace(/\n{3,}$/g, "\n"));
+    textBuffer = "";
+  }
+
   try {
     for await (const chunk of engine.query(input)) {
-      process.stdout.write(chunk);
+      if (chunk.type === "text") {
+        textBuffer += chunk.content;
+      } else {
+        // Flush buffered text as markdown before showing tool output
+        flushText();
+        process.stdout.write(chunk.content);
+      }
     }
-    process.stdout.write("\n");
+    flushText();
   } catch (err: any) {
+    flushText();
     if (err.status === 401) {
       console.error(chalk.red("\nAuthentication failed. Check your API key."));
     } else if (err.status === 429) {

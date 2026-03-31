@@ -6,6 +6,10 @@ import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/reso
 import chalk from "chalk";
 import { getToolByName, toOpenAITools } from "./tools/index.js";
 
+export type EngineChunk =
+  | { type: "text"; content: string }
+  | { type: "tool"; content: string };
+
 // Provider presets
 const PROVIDERS: Record<string, { baseURL: string; defaultModel: string }> = {
   minimax: {
@@ -89,7 +93,7 @@ export class QueryEngine {
   }
 
   // Core query loop: send → stream → execute tools → repeat
-  async *query(userMessage: string): AsyncGenerator<string> {
+  async *query(userMessage: string): AsyncGenerator<EngineChunk> {
     this.messages.push({ role: "user", content: userMessage });
 
     while (true) {
@@ -131,7 +135,7 @@ export class QueryEngine {
               text = "";
             }
           }
-          if (text) yield text;
+          if (text) yield { type: "text", content: text };
         }
 
         // Accumulate tool calls
@@ -191,13 +195,13 @@ export class QueryEngine {
             tool_call_id: tc.id,
             content: `Error: Invalid JSON in tool arguments`,
           });
-          yield `\n${chalk.red("✗")} ${chalk.bold(toolName)} ${chalk.red("Invalid JSON arguments")}\n`;
+          yield { type: "tool", content: `\n${chalk.red("✗")} ${chalk.bold(toolName)} ${chalk.red("Invalid JSON arguments")}\n` };
           continue;
         }
 
         // Show tool invocation header
         const inputSummary = formatToolInput(toolName, parsedInput);
-        yield `\n${chalk.cyan("⚡")} ${chalk.bold(toolName)}${inputSummary ? chalk.dim(` ${inputSummary}`) : ""}\n`;
+        yield { type: "tool", content: `\n${chalk.cyan("⚡")} ${chalk.bold(toolName)}${inputSummary ? chalk.dim(` ${inputSummary}`) : ""}\n` };
 
         // Execute
         const tool = getToolByName(toolName);
@@ -223,7 +227,7 @@ export class QueryEngine {
         // Show tool result summary (Claude Code style with ⎿)
         const resultPreview = formatToolResult(toolName, result);
         if (resultPreview) {
-          yield chalk.dim(`  ⎿ ${resultPreview}\n`);
+          yield { type: "tool", content: chalk.dim(`  ⎿ ${resultPreview}\n`) };
         }
 
         this.messages.push({
