@@ -278,9 +278,36 @@ ${chalk.bold("REPL Commands:")}
   });
 }
 
+// Thinking spinner — animated indicator while waiting for model response
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function createSpinner() {
+  let frame = 0;
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  return {
+    start() {
+      if (timer) return;
+      process.stdout.write(chalk.cyan(SPINNER_FRAMES[0]));
+      frame = 0;
+      timer = setInterval(() => {
+        frame = (frame + 1) % SPINNER_FRAMES.length;
+        process.stdout.write(`\x1b[1D${chalk.cyan(SPINNER_FRAMES[frame])}`);
+      }, 80);
+    },
+    stop() {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+      process.stdout.write("\x1b[1D \x1b[1D"); // erase spinner character
+    },
+  };
+}
+
 async function runQuery(engine: QueryEngine, input: string) {
   process.stdout.write("\n");
   let textBuffer = "";
+  const spinner = createSpinner();
 
   function flushText() {
     if (!textBuffer) return;
@@ -288,18 +315,25 @@ async function runQuery(engine: QueryEngine, input: string) {
     textBuffer = "";
   }
 
+  spinner.start();
+
   try {
     for await (const chunk of engine.query(input)) {
+      spinner.stop();
       if (chunk.type === "text") {
         textBuffer += chunk.content;
       } else {
         // Flush buffered text as markdown before showing tool output
         flushText();
         process.stdout.write(chunk.content);
+        // Restart spinner while waiting for next API response after tool execution
+        spinner.start();
       }
     }
+    spinner.stop();
     flushText();
   } catch (err: any) {
+    spinner.stop();
     flushText();
     if (err.status === 401) {
       console.error(chalk.red("\nAuthentication failed. Check your API key."));
