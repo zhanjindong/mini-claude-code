@@ -215,7 +215,13 @@ ${chalk.bold("REPL Commands:")}
         return;
       }
       if (key.name === "return") {
+        const selected = menuFiltered[menuIdx]?.cmd;
         acceptSelection();
+        // Handle /exit directly — readline internal state may not update reliably
+        if (selected === "/exit" || selected === "/quit") {
+          console.log(chalk.dim("\nGoodbye!"));
+          process.exit(0);
+        }
         // Fall through so readline emits "line" event
       }
     }
@@ -275,6 +281,21 @@ ${chalk.bold("REPL Commands:")}
   rl.on("close", () => {
     console.log(chalk.dim("\nGoodbye!"));
     process.exit(0);
+  });
+
+  rl.on("SIGINT", () => {
+    // Ctrl+C: if line has content, clear it; otherwise exit
+    if ((rl as any).line) {
+      (rl as any).line = "";
+      (rl as any).cursor = 0;
+      clearMenu();
+      menuFiltered = [];
+      process.stdout.write("\n");
+      rl.prompt();
+    } else {
+      console.log(chalk.dim("\nGoodbye!"));
+      process.exit(0);
+    }
   });
 }
 
