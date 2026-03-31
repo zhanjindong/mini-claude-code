@@ -1,0 +1,123 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(mvn *)",
+      "Bash(java *)",
+      "Bash(pnpm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git pull*)",
+      "Bash(git push origin feature/*)",
+      "Bash(git push origin hotfix/*)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(find *)"
+    ],
+    "deny": [
+      "Bash(npm install*)",
+      "Bash(npm i *)",
+      "Bash(yarn add*)",
+      "Bash(yarn install*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push origin master*)",
+      "Bash(git push origin release*)",
+      "Bash(rm -rf *)",
+      "Bash(drop table*)",
+      "Bash(truncate table*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(command matches '(npm run dev|npm start|pnpm dev|vite|mvn spring-boot:run|java -jar)' && command not matches 'tmux|nohup')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/check-tmux-reminder.sh" }],
+        "description": "【提醒型】启动长耗时服务时提醒使用 tmux"
+      },
+      {
+        "matcher": "Bash(command matches 'mvn.*-DskipTests')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/check-skip-tests-reminder.sh" }],
+        "description": "【提醒型】后端跳过测试编译时提醒"
+      },
+      {
+        "matcher": "Bash(command matches '(npm install|yarn add|yarn install)')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/block-npm-yarn.sh" }],
+        "description": "【阻断型】前端禁止使用 npm/yarn"
+      },
+      {
+        "matcher": "Bash(command matches 'git push.*(--force|-f).*')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/block-force-push.sh" }],
+        "description": "【阻断型】禁止 force push"
+      },
+      {
+        "matcher": "Bash(command matches 'git push.*(master|release).*')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/block-push-main-branch.sh" }],
+        "description": "【阻断型】禁止直接 push 到主分支"
+      },
+      {
+        "matcher": "Bash(command matches 'rm -rf|drop table|truncate table')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/block-dangerous-command.sh" }],
+        "description": "【阻断型】拦截高危破坏性命令"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash(command matches 'git commit')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/post-commit-handoff-reminder.sh" }],
+        "description": "【记忆型】提交后提醒增量更新 handoff"
+      },
+      {
+        "matcher": "Edit(file_path matches '\\.(java)$')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/check-system-out.sh" }],
+        "description": "【一致性型】后端: 编辑 Java 文件后检查 System.out"
+      },
+      {
+        "matcher": "Edit(file_path matches '\\.(ts|tsx|js|jsx|vue)$')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/check-console-log.sh" }],
+        "description": "【一致性型】前端: 编辑文件后扫描 console.log"
+      },
+      {
+        "matcher": "Edit(file_path matches '\\.vue$')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/block-options-api.sh" }],
+        "description": "【阻断型】前端: 检测并拦截 Options API 写法"
+      },
+      {
+        "matcher": "Edit(file_path matches '\\.(java|yml|yaml|properties|xml|ts|tsx|js|jsx|vue|json|env)$')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/check-hardcoded-secret.sh" }],
+        "description": "【阻断型】编辑文件后扫描硬编码密钥"
+      },
+      {
+        "matcher": "Write(file_path matches '\\.(java|yml|yaml|properties|xml|ts|tsx|js|jsx|vue|json|env)$')",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/check-hardcoded-secret.sh" }],
+        "description": "【阻断型】创建文件后扫描硬编码密钥"
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/memory-save.sh" }],
+        "description": "【记忆持久化】会话结束时自动刷新 git 段落 + 保留语义段落"
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "message matches '(compact|compress|context.*limit|token.*limit)'",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/strategic-compact.sh" }],
+        "description": "【压缩协议】上下文接近限制时触发结构化压缩"
+      }
+    ]
+  }
+}

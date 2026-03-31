@@ -6,7 +6,10 @@ import { WriteTool } from "./write.js";
 import { EditTool } from "./edit.js";
 import { GlobTool } from "./glob.js";
 import { GrepTool } from "./grep.js";
+import { WebFetchTool } from "./webfetch.js";
+import { AgentTool } from "./agent.js";
 import { loadSkills, executeSkill, getSkillsSummary, type Skill } from "../skills.js";
+import { initMcp } from "../mcp.js";
 
 // Tool registry
 export const ALL_TOOLS: ToolDefinition[] = [
@@ -16,6 +19,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   EditTool,
   GlobTool,
   GrepTool,
+  WebFetchTool,
+  AgentTool,
 ];
 
 function createSkillTool(skills: Skill[]): ToolDefinition {
@@ -49,6 +54,14 @@ export function initSkills(): { skills: Skill[]; summary: string } {
     ALL_TOOLS.push(createSkillTool(skills));
   }
   return { skills, summary: getSkillsSummary(skills) };
+}
+
+export async function registerMcpTools(): Promise<number> {
+  const mcpTools = await initMcp();
+  for (const tool of mcpTools) {
+    ALL_TOOLS.push(tool);
+  }
+  return mcpTools.length;
 }
 
 export function getToolByName(name: string): ToolDefinition | undefined {

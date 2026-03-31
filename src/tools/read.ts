@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../types.js";
 
 export const ReadTool: ToolDefinition = {
   name: "Read",
+  permissionLevel: "safe",
   description:
     "Read a file from the filesystem. Returns file content with line numbers. The file_path must be an absolute path.",
   inputSchema: {

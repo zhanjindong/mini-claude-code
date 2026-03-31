@@ -3,6 +3,7 @@ import type { ToolDefinition } from "../types.js";
 
 export const BashTool: ToolDefinition = {
   name: "Bash",
+  permissionLevel: "execute",
   description:
     "Execute a bash command and return its output. Use this for running shell commands, installing packages, running tests, git operations, etc.",
   inputSchema: {

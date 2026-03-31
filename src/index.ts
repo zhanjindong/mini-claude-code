@@ -4,11 +4,26 @@
 // Supports: MiniMax, DeepSeek, OpenAI, OpenRouter, and any OpenAI-compatible API
 
 import * as readline from "readline";
+import { execSync } from "node:child_process";
+import os from "node:os";
 import chalk from "chalk";
 import { QueryEngine, type EngineOptions } from "./engine.js";
-import { initSkills } from "./tools/index.js";
+import { initSkills, registerMcpTools } from "./tools/index.js";
 import { executeSkill, type Skill } from "./skills.js";
+import { getMcpServers, closeMcp } from "./mcp.js";
 import { renderMarkdown } from "./markdown.js";
+import { loadConfig, type MccConfig } from "./config.js";
+import { loadContext, type LoadedContext } from "./context.js";
+import { initPermissions } from "./permissions.js";
+import { loadHooks, getHooks } from "./hooks.js";
+import {
+  generateSessionId,
+  saveSession,
+  loadSession,
+  listSessions,
+  getLastSession,
+  extractSummary,
+} from "./session.js";
 
 const VERSION = "0.1.0";
 
@@ -28,6 +43,7 @@ ${chalk.bold("Options:")}
   --model <model>       Model name (uses provider default if omitted)
   --base-url <url>      Custom API base URL
   --api-key <key>       API key (or set via API_KEY env var)
+  --resume              Resume most recent session for current directory
   -p, --prompt <text>   Run a single prompt and exit
   -h, --help            Show this help
 
@@ -48,28 +64,37 @@ ${chalk.bold("Provider Examples:")}
   API_KEY=your-key npx tsx src/index.ts --base-url https://your-api.com/v1 --model your-model
 
 ${chalk.bold("REPL Commands:")}
-  /clear    Clear conversation history
-  /cost     Show token usage
-  /help     Show help
-  /exit     Exit
+  /clear      Clear conversation history
+  /compact    Compress conversation history
+  /cost       Show token usage
+  /diff       Show git diff
+  /status     Show git status
+  /resume     Resume most recent session
+  /sessions   List saved sessions
+  /hooks      List loaded hooks
+  /mcp        List MCP servers and tools
+  /help       Show help
+  /exit       Exit
 `);
     process.exit(0);
   }
 
   // Parse arguments
-  const options: EngineOptions = {};
+  const cliOptions: Record<string, string> = {};
   let oneShot: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--provider" && args[i + 1]) {
-      options.provider = args[++i];
+      cliOptions.provider = args[++i];
     } else if ((arg === "--model" || arg === "-m") && args[i + 1]) {
-      options.model = args[++i];
+      cliOptions.model = args[++i];
     } else if (arg === "--base-url" && args[i + 1]) {
-      options.baseURL = args[++i];
+      cliOptions.baseURL = args[++i];
     } else if (arg === "--api-key" && args[i + 1]) {
-      options.apiKey = args[++i];
+      cliOptions.apiKey = args[++i];
+    } else if (arg === "--resume") {
+      cliOptions.resume = "true";
     } else if ((arg === "-p" || arg === "--prompt") && args[i + 1]) {
       oneShot = args[++i];
     } else if (!arg.startsWith("-")) {
@@ -78,39 +103,122 @@ ${chalk.bold("REPL Commands:")}
     }
   }
 
-  // Check API key
-  const apiKey = options.apiKey || process.env.API_KEY || process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  // Build config overrides from CLI arguments
+  const configOverrides: Partial<MccConfig & { apiKey?: string }> = {};
+  if (cliOptions.provider) configOverrides.provider = cliOptions.provider;
+  if (cliOptions.model) configOverrides.model = cliOptions.model;
+  if (cliOptions.baseURL) configOverrides.baseURL = cliOptions.baseURL;
+  if (cliOptions.apiKey) configOverrides.apiKey = cliOptions.apiKey;
+
+  // Initialize configuration system
+  const config = loadConfig(configOverrides);
+
+  if (!config.apiKey) {
     console.error(chalk.red("Error: API key is required."));
     console.error(chalk.dim("Set via: export API_KEY=your-key-here"));
     console.error(chalk.dim("Or use:  --api-key your-key-here"));
     process.exit(1);
   }
-  options.apiKey = apiKey;
+
+  // Initialize permission system
+  initPermissions(config.permissions);
+
+  // Load hooks
+  loadHooks(process.cwd());
+
+  // Load CLAUDE.md context files
+  const context = loadContext(process.cwd());
 
   // Initialize skills
   const { skills, summary: skillsSummary } = initSkills();
-  if (skills.length > 0) {
-    options.skillsSummary = skillsSummary;
+
+  // Initialize MCP servers
+  const mcpToolCount = await registerMcpTools();
+
+  // Ensure MCP connections are cleaned up on exit
+  process.on("exit", () => closeMcp());
+
+  // Build engine options from resolved config
+  const engineOpts: EngineOptions = {
+    provider: config.provider,
+    model: config.model || undefined,
+    maxTokens: config.maxTokens,
+    baseURL: config.baseURL || undefined,
+    apiKey: config.apiKey,
+    skillsSummary: skillsSummary || undefined,
+    contextContent: context.combinedContent || undefined,
+  };
+
+  const engine = new QueryEngine(engineOpts);
+
+  // Session state
+  let sessionId = generateSessionId();
+  const sessionCreatedAt = new Date().toISOString();
+
+  /** Save current session to disk */
+  function persistSession(): void {
+    const messages = engine.getMessages();
+    if (messages.length === 0) return;
+    saveSession({
+      id: sessionId,
+      cwd: process.cwd(),
+      provider: engine.providerName,
+      model: engine.modelName,
+      createdAt: sessionCreatedAt,
+      updatedAt: new Date().toISOString(),
+      messageCount: messages.length,
+      summary: extractSummary(messages),
+      messages,
+    });
   }
 
-  const engine = new QueryEngine(options);
+  /** Resume from a session, returns true if successful */
+  function resumeSession(): boolean {
+    const last = getLastSession(process.cwd());
+    if (!last) {
+      console.log(chalk.yellow("No previous session found."));
+      return false;
+    }
+    const data = loadSession(last.id);
+    if (!data) {
+      console.log(chalk.yellow("Failed to load session data."));
+      return false;
+    }
+    engine.restoreMessages(data.messages);
+    sessionId = data.id;
+    console.log(chalk.green(`Resumed session ${data.id} (${data.messageCount} messages)`));
+    console.log(chalk.dim(`  ${data.summary}`));
+    return true;
+  }
+
+  // Handle --resume flag
+  if (cliOptions.resume) {
+    resumeSession();
+  }
 
   // One-shot mode
   if (oneShot) {
     await runQuery(engine, oneShot);
+    persistSession();
     process.exit(0);
   }
 
   // REPL mode
-  printBanner(engine, skills);
+  printBanner(engine, skills, context, mcpToolCount);
 
   // Command menu items with descriptions
   const cmdEntries: { cmd: string; desc: string }[] = [
     { cmd: "/help", desc: "Show help" },
+    { cmd: "/compact", desc: "Compress conversation history" },
     { cmd: "/clear", desc: "Clear conversation history" },
     { cmd: "/cost", desc: "Show token usage" },
+    { cmd: "/resume", desc: "Resume most recent session" },
+    { cmd: "/sessions", desc: "List saved sessions" },
+    { cmd: "/diff", desc: "Show git diff" },
+    { cmd: "/status", desc: "Show git status" },
     { cmd: "/skills", desc: "List loaded skills" },
+    { cmd: "/hooks", desc: "List loaded hooks" },
+    { cmd: "/mcp", desc: "List MCP servers and tools" },
     { cmd: "/exit", desc: "Exit" },
     ...skills.map((s) => ({ cmd: "/" + s.name, desc: s.description || "" })),
   ];
@@ -118,7 +226,7 @@ ${chalk.bold("REPL Commands:")}
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: "\n" + chalk.blue("❯ "),
+    prompt: "\n" + chalk.blue("\u276f "),
     terminal: true,
   });
 
@@ -142,11 +250,11 @@ ${chalk.bold("REPL Commands:")}
     if (menuFiltered.length === 0) return;
 
     const maxShow = Math.min(menuFiltered.length, 8);
-    // Ensure scroll room so save/restore cursor stays correct
-    process.stdout.write("\n".repeat(maxShow));
-    process.stdout.write(`\x1b[${maxShow}A`);
-
-    process.stdout.write("\x1b7"); // save cursor
+    // Save cursor BEFORE making scroll room (\n resets column to 0)
+    process.stdout.write("\x1b7"); // save cursor at input position (row + column)
+    process.stdout.write("\n".repeat(maxShow)); // ensure scroll room
+    process.stdout.write("\x1b8"); // restore to original position (correct column)
+    process.stdout.write("\x1b7"); // re-save for final restore after drawing
     for (let i = 0; i < maxShow; i++) {
       const { cmd, desc } = menuFiltered[i];
       process.stdout.write("\n\x1b[2K");
@@ -157,7 +265,7 @@ ${chalk.bold("REPL Commands:")}
       }
     }
     if (menuFiltered.length > maxShow) {
-      process.stdout.write(`\n\x1b[2K  \x1b[90m… +${menuFiltered.length - maxShow} more\x1b[39m`);
+      process.stdout.write(`\n\x1b[2K  \x1b[90m\u2026 +${menuFiltered.length - maxShow} more\x1b[39m`);
       menuLines = maxShow + 1;
     } else {
       menuLines = maxShow;
@@ -219,6 +327,7 @@ ${chalk.bold("REPL Commands:")}
         acceptSelection();
         // Handle /exit directly — readline internal state may not update reliably
         if (selected === "/exit" || selected === "/quit") {
+          persistSession();
           console.log(chalk.dim("\nGoodbye!"));
           process.exit(0);
         }
@@ -248,8 +357,54 @@ ${chalk.bold("REPL Commands:")}
     }
 
     if (input.startsWith("/")) {
+      // Async command: /compact (requires API call for summarization)
+      if (input === "/compact") {
+        const count = engine.messageCount;
+        if (count <= 5) {
+          console.log(chalk.dim("Conversation too short to compact."));
+        } else {
+          console.log(chalk.dim(`Compacting ${count} messages...`));
+          busy = true;
+          try {
+            const result = await engine.compactHistory();
+            console.log(
+              chalk.green(`Compacted: removed ${result.removed} old messages, kept ${result.kept}`)
+            );
+            persistSession();
+          } catch (err: any) {
+            console.error(chalk.red(`Compact failed: ${err.message}`));
+          }
+          busy = false;
+        }
+        rl.prompt();
+        return;
+      }
+
+      // Session commands
+      if (input === "/resume") {
+        resumeSession();
+        rl.prompt();
+        return;
+      }
+
+      if (input === "/sessions") {
+        const sessions = listSessions();
+        if (sessions.length === 0) {
+          console.log(chalk.dim("No saved sessions."));
+        } else {
+          console.log(chalk.bold("\nRecent Sessions:"));
+          for (const s of sessions.slice(0, 10)) {
+            const isCurrent = s.id === sessionId;
+            const marker = isCurrent ? chalk.green("\u2192 ") : "  ";
+            console.log(`${marker}${chalk.cyan(s.id)} ${chalk.dim(s.updatedAt.slice(0, 16))} ${s.summary}`);
+          }
+        }
+        rl.prompt();
+        return;
+      }
+
       // Built-in commands (sync, no API call)
-      if (handleBuiltinCommand(input, engine, rl, skills)) {
+      if (handleBuiltinCommand(input, engine, rl, skills, persistSession)) {
         rl.prompt();
         return;
       }
@@ -266,6 +421,7 @@ ${chalk.bold("REPL Commands:")}
         console.log(chalk.cyan(`> /${skill.name}`) + (argsStr ? chalk.dim(` ${argsStr}`) : ""));
         busy = true;
         await runQuery(engine, expanded);
+        persistSession();
         busy = false;
         rl.prompt();
         return;
@@ -278,11 +434,13 @@ ${chalk.bold("REPL Commands:")}
 
     busy = true;
     await runQuery(engine, input);
+    persistSession();
     busy = false;
     rl.prompt();
   });
 
   rl.on("close", () => {
+    persistSession();
     console.log(chalk.dim("\nGoodbye!"));
     process.exit(0);
   });
@@ -297,6 +455,7 @@ ${chalk.bold("REPL Commands:")}
       process.stdout.write("\n");
       rl.prompt();
     } else {
+      persistSession();
       console.log(chalk.dim("\nGoodbye!"));
       process.exit(0);
     }
@@ -304,7 +463,7 @@ ${chalk.bold("REPL Commands:")}
 }
 
 // Thinking spinner — animated indicator while waiting for model response
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_FRAMES = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"];
 
 function createSpinner() {
   let frame = 0;
@@ -394,13 +553,15 @@ function handleBuiltinCommand(
   input: string,
   engine: QueryEngine,
   rl: readline.Interface,
-  skills: Skill[]
+  skills: Skill[],
+  persistSession: () => void
 ): boolean {
   const cmd = input.split(/\s+/)[0].toLowerCase();
 
   switch (cmd) {
     case "/exit":
     case "/quit":
+      persistSession();
       console.log(chalk.dim("\nGoodbye!"));
       process.exit(0);
 
@@ -434,14 +595,96 @@ function handleBuiltinCommand(
       );
       return true;
 
+    case "/hooks": {
+      const hooks = getHooks();
+      if (hooks.length === 0) {
+        console.log(chalk.dim("\nNo hooks loaded."));
+      } else {
+        console.log(chalk.bold("\nLoaded Hooks:"));
+        for (const h of hooks) {
+          const toolFilter = h.toolName ? chalk.cyan(h.toolName) : chalk.dim("*");
+          console.log(`  ${chalk.yellow(h.event)} [${toolFilter}] ${chalk.dim(h.command)}`);
+        }
+      }
+      console.log(
+        chalk.dim(
+          `\nHook config files:\n  Project: .mcc/hooks.json\n  User:    ~/.mcc/hooks.json`
+        )
+      );
+      return true;
+    }
+
+    case "/mcp": {
+      const servers = getMcpServers();
+      if (servers.length === 0) {
+        console.log(chalk.dim("\nNo MCP servers connected."));
+      } else {
+        console.log(chalk.bold("\nMCP Servers:"));
+        for (const s of servers) {
+          console.log(`  ${chalk.cyan(s.name)} ${chalk.dim(`(${s.toolCount} tools)`)}`);
+        }
+      }
+      console.log(
+        chalk.dim(
+          `\nMCP config files:\n  Project: .mcc/mcp.json\n  User:    ~/.mcc/mcp.json`
+        )
+      );
+      return true;
+    }
+
+    case "/diff": {
+      try {
+        const diff = execSync("git diff HEAD 2>/dev/null || git diff 2>/dev/null", {
+          encoding: "utf-8",
+          maxBuffer: 1024 * 1024,
+          cwd: process.cwd(),
+        }).trim();
+
+        if (!diff) {
+          console.log(chalk.dim("No changes detected."));
+        } else {
+          console.log(renderMarkdown("```diff\n" + diff + "\n```"));
+        }
+      } catch {
+        console.log(chalk.dim("Not a git repository or git not available."));
+      }
+      return true;
+    }
+
+    case "/status": {
+      try {
+        const status = execSync("git status --short 2>/dev/null", {
+          encoding: "utf-8",
+          cwd: process.cwd(),
+        }).trim();
+
+        if (!status) {
+          console.log(chalk.dim("Working tree clean."));
+        } else {
+          console.log(chalk.bold("\nGit Status:"));
+          console.log(status);
+        }
+      } catch {
+        console.log(chalk.dim("Not a git repository or git not available."));
+      }
+      return true;
+    }
+
     case "/help":
       console.log(`
 ${chalk.bold("Commands:")}
-  /clear    Clear conversation history
-  /cost     Show token usage
-  /skills   List loaded skills
-  /exit     Exit
-  /help     Show this help
+  /compact    Compress conversation history
+  /clear      Clear conversation history
+  /cost       Show token usage
+  /resume     Resume most recent session
+  /sessions   List saved sessions
+  /diff       Show git diff
+  /status     Show git status
+  /skills     List loaded skills
+  /hooks      List loaded hooks
+  /mcp        List MCP servers and tools
+  /exit       Exit
+  /help       Show this help
 ${skills.length > 0 ? `\n${chalk.bold("Skills:")} ${skills.map((s) => "/" + s.name).join(", ")}` : ""}
 `);
       return true;
@@ -451,11 +694,28 @@ ${skills.length > 0 ? `\n${chalk.bold("Skills:")} ${skills.map((s) => "/" + s.na
   }
 }
 
-function printBanner(engine: QueryEngine, skills: Skill[]) {
+function printBanner(engine: QueryEngine, skills: Skill[], context: LoadedContext, mcpToolCount: number = 0) {
+  const cwd = process.cwd();
+  let contextLine = "";
+  if (context.files.length > 0) {
+    const contextInfo = context.files.map((f) => {
+      const shortPath = f.path.replace(cwd + "/", "").replace(os.homedir(), "~");
+      return `${shortPath} (${f.source})`;
+    }).join(", ");
+    contextLine = `\n${chalk.dim(`Context: ${contextInfo}`)}`;
+  }
+
+  let mcpLine = "";
+  if (mcpToolCount > 0) {
+    const servers = getMcpServers();
+    const mcpInfo = servers.map((s) => `${s.name}(${s.toolCount})`).join(", ");
+    mcpLine = `\n${chalk.dim(`MCP: ${mcpInfo}`)}`;
+  }
+
   console.log(`
 ${chalk.bold.blue("Mini Claude Code")} v${VERSION}
 ${chalk.dim(`Provider: ${engine.providerName} | Model: ${engine.modelName}`)}
-${chalk.dim(`cwd: ${process.cwd()}`)}${skills.length > 0 ? `\n${chalk.dim(`Skills: ${skills.map((s) => s.name).join(", ")}`)}` : ""}
+${chalk.dim(`cwd: ${cwd}`)}${skills.length > 0 ? `\n${chalk.dim(`Skills: ${skills.map((s) => s.name).join(", ")}`)}` : ""}${mcpLine}${contextLine}
 ${chalk.dim("Type /help for commands, Ctrl+C to exit")}
 `);
 }

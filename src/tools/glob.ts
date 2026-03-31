@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../types.js";
 
 export const GlobTool: ToolDefinition = {
   name: "Glob",
+  permissionLevel: "safe",
   description:
     "Find files matching a glob pattern. Returns matching file paths sorted by modification time. Use patterns like '**/*.ts' or 'src/**/*.js'.",
   inputSchema: {

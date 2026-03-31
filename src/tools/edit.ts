@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../types.js";
 
 export const EditTool: ToolDefinition = {
   name: "Edit",
+  permissionLevel: "write",
   description:
     "Perform exact string replacement in a file. Finds old_string and replaces it with new_string. The old_string must be unique in the file unless replace_all is true.",
   inputSchema: {

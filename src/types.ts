@@ -13,6 +13,7 @@ export interface ToolDefinition {
     required?: string[];
   };
   execute(input: ToolInput, abortSignal?: AbortSignal): Promise<string>;
+  permissionLevel?: "safe" | "write" | "execute";  // default: "execute"
 }
 
 export interface Message {

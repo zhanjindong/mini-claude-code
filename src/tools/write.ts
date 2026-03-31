@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../types.js";
 
 export const WriteTool: ToolDefinition = {
   name: "Write",
+  permissionLevel: "write",
   description:
     "Write content to a file. Creates the file if it doesn't exist, or overwrites if it does. Creates parent directories as needed.",
   inputSchema: {

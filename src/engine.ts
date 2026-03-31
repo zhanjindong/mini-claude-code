@@ -5,6 +5,9 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import chalk from "chalk";
 import { getToolByName, toOpenAITools } from "./tools/index.js";
+import { checkPermission } from "./permissions.js";
+import { getConfig } from "./config.js";
+import { runHooks } from "./hooks.js";
 
 export type EngineChunk =
   | { type: "text"; content: string }
@@ -30,7 +33,7 @@ const PROVIDERS: Record<string, { baseURL: string; defaultModel: string }> = {
   },
 };
 
-function buildSystemPrompt(skillsSummary?: string): string {
+function buildSystemPrompt(skillsSummary?: string, contextContent?: string): string {
   let prompt = `You are a helpful AI coding assistant running in the user's terminal. You help with software engineering tasks including writing code, debugging, explaining code, running commands, and managing files.
 
 Environment:
@@ -47,6 +50,7 @@ Guidelines:
 - Always use absolute paths for file operations`;
 
   if (skillsSummary) prompt += "\n" + skillsSummary;
+  if (contextContent) prompt += "\n\n---\n\n" + contextContent;
   return prompt;
 }
 
@@ -57,6 +61,7 @@ export interface EngineOptions {
   apiKey?: string;
   baseURL?: string;
   skillsSummary?: string;
+  contextContent?: string;
 }
 
 export class QueryEngine {
@@ -68,12 +73,14 @@ export class QueryEngine {
   private totalOutputTokens = 0;
   public providerName: string;
   private skillsSummary: string;
+  private contextContent: string;
 
   constructor(options: EngineOptions = {}) {
     const provider = options.provider || "minimax";
     const preset = PROVIDERS[provider];
     this.providerName = provider;
     this.skillsSummary = options.skillsSummary || "";
+    this.contextContent = options.contextContent || "";
 
     this.client = new OpenAI({
       apiKey: options.apiKey || process.env.API_KEY || process.env.OPENAI_API_KEY,
@@ -104,8 +111,9 @@ export class QueryEngine {
           model: this.model,
           max_tokens: this.maxTokens,
           stream: true,
+          stream_options: { include_usage: true },
           messages: [
-            { role: "system", content: buildSystemPrompt(this.skillsSummary) },
+            { role: "system", content: buildSystemPrompt(this.skillsSummary, this.contextContent) },
             ...this.messages,
           ],
           tools: toOpenAITools(),
@@ -207,12 +215,41 @@ export class QueryEngine {
           continue;
         }
 
-        // Show tool invocation header
+        // Compute input summary and resolve tool
         const inputSummary = formatToolInput(toolName, parsedInput);
+        const tool = getToolByName(toolName);
+
+        // Permission check
+        const permLevel = tool?.permissionLevel || "execute";
+        const permission = await checkPermission(toolName, permLevel, inputSummary, getConfig().permissions);
+        if (!permission.granted) {
+          yield { type: "tool", content: `${chalk.yellow("⊘")} ${chalk.bold(toolName)} ${chalk.yellow(permission.reason || "denied")}\n` };
+          this.messages.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            content: `Error: Tool execution denied by user`,
+          });
+          continue;
+        }
+
+        // beforeToolUse hooks
+        const beforeResult = runHooks("beforeToolUse", toolName, {
+          TOOL_INPUT: JSON.stringify(parsedInput),
+        });
+        if (beforeResult.blocked) {
+          yield { type: "tool", content: `${chalk.yellow("⊘")} ${chalk.bold(toolName)} ${chalk.yellow("blocked by hook: " + beforeResult.blockMessage)}\n` };
+          this.messages.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            content: `Error: Tool execution blocked by hook: ${beforeResult.blockMessage}`,
+          });
+          continue;
+        }
+
+        // Show tool invocation header
         yield { type: "tool", content: `${chalk.cyan("⚡")} ${chalk.bold(toolName)}${inputSummary ? chalk.dim(` ${inputSummary}`) : ""}\n` };
 
         // Execute
-        const tool = getToolByName(toolName);
         let result: string;
 
         if (!tool) {
@@ -232,6 +269,12 @@ export class QueryEngine {
             `\n\n... (truncated, ${result.length} total chars)`;
         }
 
+        // afterToolResult hooks
+        runHooks("afterToolResult", toolName, {
+          TOOL_INPUT: JSON.stringify(parsedInput),
+          TOOL_RESULT: result.slice(0, 10000),
+        });
+
         // Show tool result summary (Claude Code style with ⎿)
         const resultPreview = formatToolResult(toolName, result);
         if (resultPreview) {
@@ -246,6 +289,80 @@ export class QueryEngine {
       }
       // Loop back to API with tool results
     }
+  }
+
+  /** Get current messages for serialization */
+  getMessages(): ChatCompletionMessageParam[] {
+    return [...this.messages];
+  }
+
+  /** Restore messages from a saved session */
+  restoreMessages(messages: ChatCompletionMessageParam[]): void {
+    this.messages = [...messages];
+  }
+
+  /**
+   * Compact conversation history by summarizing old messages.
+   * Keeps recent messages intact, replaces older ones with a concise summary.
+   */
+  async compactHistory(keepRecent: number = 4): Promise<{ removed: number; kept: number }> {
+    if (this.messages.length <= keepRecent + 1) {
+      return { removed: 0, kept: this.messages.length };
+    }
+
+    // Split messages: old (to summarize) and recent (to keep)
+    const oldMessages = this.messages.slice(0, -keepRecent);
+    const recentMessages = this.messages.slice(-keepRecent);
+
+    // Ask LLM to summarize the old conversation
+    const summaryRequest: ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content:
+          "Summarize the following conversation concisely. Focus on: key decisions made, files modified, problems encountered and resolved, current task state. Output a structured summary in markdown.",
+      },
+      ...oldMessages,
+      {
+        role: "user",
+        content:
+          "Please provide a concise summary of the above conversation, focusing on what was accomplished and the current state.",
+      },
+    ];
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      max_tokens: 2048,
+      messages: summaryRequest,
+    });
+
+    const summary = response.choices[0]?.message?.content || "(no summary generated)";
+
+    // Replace old messages with summary
+    this.messages = [
+      {
+        role: "user",
+        content: `[Conversation Summary]\n${summary}`,
+      },
+      {
+        role: "assistant",
+        content:
+          "I've reviewed the conversation summary and I'm ready to continue. What would you like to do next?",
+      },
+      ...recentMessages,
+    ];
+
+    // Track token usage from summary request
+    if (response.usage) {
+      this.totalInputTokens += response.usage.prompt_tokens || 0;
+      this.totalOutputTokens += response.usage.completion_tokens || 0;
+    }
+
+    return { removed: oldMessages.length, kept: recentMessages.length + 2 };
+  }
+
+  /** Get current message count */
+  get messageCount(): number {
+    return this.messages.length;
   }
 
   clearHistory() {
@@ -274,7 +391,19 @@ function formatToolInput(
       return `/${input.pattern}/${input.path ? ` in ${input.path}` : ""}`;
     case "skill":
       return `${input.skill}${input.args ? ` ${input.args}` : ""}`;
+    case "webfetch":
+      return `${input.url}`;
+    case "agent":
+      return input.description
+        ? `${input.description}`
+        : `${((input.prompt as string) || "").slice(0, 60)}...`;
     default:
+      if (toolName.startsWith("mcp_")) {
+        const args = Object.entries(input)
+          .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+          .join(", ");
+        return args.length > 100 ? args.slice(0, 100) + "..." : args;
+      }
       return "";
   }
 }
@@ -329,6 +458,12 @@ function formatToolResult(toolName: string, result: string): string {
     case "skill":
       // Don't preview skill body expansion
       return "✓ expanded";
+    case "webfetch":
+      if (lines.length === 0) return "(empty)";
+      return `${lines.length} lines fetched`;
+    case "agent":
+      if (lines.length === 0) return "(no output)";
+      return `${lines.length} lines from sub-agent`;
     default: {
       if (lines.length === 0) return "(empty)";
       return truncLine(lines[0]);

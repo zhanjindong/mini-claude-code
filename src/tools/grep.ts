@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../types.js";
 
 export const GrepTool: ToolDefinition = {
   name: "Grep",
+  permissionLevel: "safe",
   description:
     "Search file contents using ripgrep (rg). Supports regex patterns. Falls back to grep if rg is not installed.",
   inputSchema: {
