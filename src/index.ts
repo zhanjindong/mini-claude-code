@@ -104,45 +104,132 @@ ${chalk.bold("REPL Commands:")}
   // REPL mode
   printBanner(engine, skills);
 
-  // All completable slash commands
-  const builtinCmds = ["/help", "/clear", "/cost", "/skills", "/exit", "/quit"];
-  const skillCmds = skills.map((s) => "/" + s.name);
-  const allCmds = [...builtinCmds, ...skillCmds];
+  // Command menu items with descriptions
+  const cmdEntries: { cmd: string; desc: string }[] = [
+    { cmd: "/help", desc: "Show help" },
+    { cmd: "/clear", desc: "Clear conversation history" },
+    { cmd: "/cost", desc: "Show token usage" },
+    { cmd: "/skills", desc: "List loaded skills" },
+    { cmd: "/exit", desc: "Exit" },
+    ...skills.map((s) => ({ cmd: "/" + s.name, desc: s.description || "" })),
+  ];
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: chalk.blue("\n❯ "),
     terminal: true,
-    completer(line: string) {
-      if (line.startsWith("/")) {
-        const hits = allCmds.filter((c) => c.startsWith(line.toLowerCase()));
-        return [hits.length ? hits : allCmds, line];
-      }
-      return [[], line];
-    },
   });
 
-  // Inline ghost text hint (like Claude Code / fish shell)
-  process.stdin.on("keypress", () => {
-    setImmediate(() => {
-      const line = rl.line;
-      // Clear any previous ghost text
-      process.stdout.write("\x1b[K");
+  // ── Dropdown menu state ──
+  let menuFiltered: typeof cmdEntries = [];
+  let menuIdx = 0;
+  let menuLines = 0; // number of rendered menu lines on screen
 
-      if (!line || !line.startsWith("/") || line.includes(" ")) return;
+  function clearMenu() {
+    if (menuLines === 0) return;
+    process.stdout.write("\x1b7"); // save cursor
+    for (let i = 0; i < menuLines; i++) {
+      process.stdout.write("\n\x1b[2K"); // down + clear
+    }
+    process.stdout.write("\x1b8"); // restore cursor
+    menuLines = 0;
+  }
 
-      const match = allCmds.find((c) => c.startsWith(line.toLowerCase()));
-      if (match && match.toLowerCase() !== line.toLowerCase()) {
-        const ghost = match.slice(line.length);
-        process.stdout.write(`\x1b[90m${ghost}\x1b[39m\x1b[${ghost.length}D`);
+  function renderMenu() {
+    clearMenu();
+    if (menuFiltered.length === 0) return;
+
+    const maxShow = Math.min(menuFiltered.length, 8);
+    // Ensure scroll room so save/restore cursor stays correct
+    process.stdout.write("\n".repeat(maxShow));
+    process.stdout.write(`\x1b[${maxShow}A`);
+
+    process.stdout.write("\x1b7"); // save cursor
+    for (let i = 0; i < maxShow; i++) {
+      const { cmd, desc } = menuFiltered[i];
+      process.stdout.write("\n\x1b[2K");
+      if (i === menuIdx) {
+        process.stdout.write(`  \x1b[7m ${cmd} \x1b[27m \x1b[90m${desc}\x1b[39m`);
+      } else {
+        process.stdout.write(`   \x1b[90m${cmd}  ${desc}\x1b[39m`);
       }
-    });
-  });
+    }
+    if (menuFiltered.length > maxShow) {
+      process.stdout.write(`\n\x1b[2K  \x1b[90m… +${menuFiltered.length - maxShow} more\x1b[39m`);
+      menuLines = maxShow + 1;
+    } else {
+      menuLines = maxShow;
+    }
+    process.stdout.write("\x1b8"); // restore cursor
+  }
+
+  function updateMenu() {
+    const line = (rl as any).line as string;
+    if (!line || !line.startsWith("/") || line.includes(" ")) {
+      if (menuLines > 0) clearMenu();
+      menuFiltered = [];
+      return;
+    }
+    const prefix = line.toLowerCase();
+    menuFiltered = cmdEntries.filter((e) => e.cmd.startsWith(prefix));
+    menuIdx = Math.min(menuIdx, Math.max(0, menuFiltered.length - 1));
+    renderMenu();
+  }
+
+  function acceptSelection() {
+    if (menuFiltered.length === 0) return;
+    const selected = menuFiltered[menuIdx].cmd;
+    clearMenu();
+    menuFiltered = [];
+    // Replace readline buffer with selected command
+    const cursor = (rl as any).cursor as number;
+    readline.moveCursor(process.stdout, -cursor, 0);
+    process.stdout.write("\x1b[K" + selected);
+    (rl as any).line = selected;
+    (rl as any).cursor = selected.length;
+  }
+
+  // Intercept readline key processing for menu navigation
+  const origTtyWrite = (rl as any)._ttyWrite.bind(rl);
+  (rl as any)._ttyWrite = function (s: string, key: any) {
+    if (menuFiltered.length > 0 && key) {
+      if (key.name === "up") {
+        menuIdx = (menuIdx - 1 + menuFiltered.length) % menuFiltered.length;
+        renderMenu();
+        return;
+      }
+      if (key.name === "down") {
+        menuIdx = (menuIdx + 1) % menuFiltered.length;
+        renderMenu();
+        return;
+      }
+      if (key.name === "tab") {
+        acceptSelection();
+        return;
+      }
+      if (key.name === "escape") {
+        clearMenu();
+        menuFiltered = [];
+        return;
+      }
+      if (key.name === "return") {
+        acceptSelection();
+        // Fall through so readline emits "line" event
+      }
+    }
+
+    origTtyWrite(s, key);
+    setImmediate(() => updateMenu());
+  };
 
   rl.prompt();
 
   rl.on("line", async (line) => {
+    // Menu may have left rendered lines — ensure cleanup
+    clearMenu();
+    menuFiltered = [];
+
     const input = line.trim();
     if (!input) {
       rl.prompt();
