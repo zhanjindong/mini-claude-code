@@ -330,9 +330,9 @@ async function runQuery(engine: QueryEngine, input: string) {
   const spinner = createSpinner();
   const abortController = new AbortController();
 
-  // Listen for Escape key to abort
+  // Listen for Escape or Ctrl+C to abort
   const onKeypress = (_str: string, key: any) => {
-    if (key?.name === "escape") {
+    if (key?.name === "escape" || (key?.ctrl && key?.name === "c")) {
       abortController.abort();
     }
   };
