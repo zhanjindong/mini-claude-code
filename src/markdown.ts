@@ -1,7 +1,42 @@
 // Simple terminal markdown renderer using chalk
 // Handles: bold, italic, inline code, code blocks, headers, lists, links, horizontal rules
+// Also provides colorized git diff rendering.
 
 import chalk from "chalk";
+
+/**
+ * Render a unified diff string with per-line coloring.
+ *
+ * - `diff --git` header lines: bold yellow
+ * - `---` / `+++` file indicators: bold
+ * - `@@` hunk headers: cyan
+ * - `+` added lines: green
+ * - `-` removed lines: red
+ * - context lines: dim
+ */
+export function renderDiff(diff: string): string {
+  return diff
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("diff --git")) {
+        return chalk.bold.yellow(line);
+      }
+      if (line.startsWith("+++") || line.startsWith("---")) {
+        return chalk.bold(line);
+      }
+      if (line.startsWith("+")) {
+        return chalk.green(line);
+      }
+      if (line.startsWith("-")) {
+        return chalk.red(line);
+      }
+      if (line.startsWith("@@")) {
+        return chalk.cyan(line);
+      }
+      return chalk.dim(line);
+    })
+    .join("\n");
+}
 
 export function renderMarkdown(text: string): string {
   const lines = text.split("\n");

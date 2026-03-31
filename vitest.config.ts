@@ -5,6 +5,9 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     environment: "node",
     globals: false,
+    env: {
+      FORCE_COLOR: "1",
+    },
   },
   resolve: {
     alias: {

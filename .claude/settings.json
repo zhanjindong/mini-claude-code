@@ -4,6 +4,7 @@
       "Read",
       "Glob",
       "Grep",
+      "Skill",
       "Bash(mvn *)",
       "Bash(java *)",
       "Bash(pnpm *)",

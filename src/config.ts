@@ -168,12 +168,9 @@ export function saveUserConfig(patch: Partial<MccConfig>): void {
 
   // Merge patch into existing
   const merged = { ...existing, ...patch };
-  if (patch.permissions && existing.permissions) {
-    merged.permissions = Object.assign(
-      {},
-      existing.permissions,
-      patch.permissions
-    );
+  if (patch.permissions !== undefined) {
+    // permissions field is always replaced entirely, not merged
+    merged.permissions = patch.permissions;
   }
 
   // Ensure directory exists

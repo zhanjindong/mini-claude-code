@@ -14,22 +14,26 @@ export type EngineChunk =
   | { type: "tool"; content: string };
 
 // Provider presets
-const PROVIDERS: Record<string, { baseURL: string; defaultModel: string }> = {
+const PROVIDERS: Record<string, { baseURL: string; defaultModel: string; contextWindow: number }> = {
   minimax: {
     baseURL: "https://api.minimax.chat/v1",
     defaultModel: "MiniMax-M2.5",
+    contextWindow: 128000,
   },
   deepseek: {
     baseURL: "https://api.deepseek.com",
     defaultModel: "deepseek-chat",
+    contextWindow: 64000,
   },
   openai: {
     baseURL: "https://api.openai.com/v1",
     defaultModel: "gpt-4o",
+    contextWindow: 128000,
   },
   openrouter: {
     baseURL: "https://openrouter.ai/api/v1",
     defaultModel: "anthropic/claude-sonnet-4",
+    contextWindow: 200000,
   },
 };
 
@@ -62,6 +66,7 @@ export interface EngineOptions {
   baseURL?: string;
   skillsSummary?: string;
   contextContent?: string;
+  contextWindow?: number;
 }
 
 export class QueryEngine {
@@ -74,6 +79,7 @@ export class QueryEngine {
   public providerName: string;
   private skillsSummary: string;
   private contextContent: string;
+  private contextWindow: number;
 
   constructor(options: EngineOptions = {}) {
     const provider = options.provider || "minimax";
@@ -89,6 +95,7 @@ export class QueryEngine {
 
     this.model = options.model || preset?.defaultModel || "gpt-4o";
     this.maxTokens = options.maxTokens || 8192;
+    this.contextWindow = options.contextWindow || preset?.contextWindow || 128000;
   }
 
   get tokenUsage() {
@@ -99,12 +106,38 @@ export class QueryEngine {
     return this.model;
   }
 
+  /** Estimate total tokens in conversation history */
+  estimateHistoryTokens(): number {
+    let chars = 0;
+    for (const msg of this.messages) {
+      if (typeof msg.content === "string") {
+        chars += (msg.content || "").length;
+      }
+    }
+    // Rough estimate: 1 token ≈ 3 chars (balances English ~4 and CJK ~2)
+    return Math.ceil(chars / 3);
+  }
+
   // Core query loop: send → stream → execute tools → repeat
   async *query(userMessage: string, signal?: AbortSignal): AsyncGenerator<EngineChunk> {
     this.messages.push({ role: "user", content: userMessage });
 
     while (true) {
       if (signal?.aborted) break;
+
+      // Auto-compact when approaching context window limit
+      const estimatedTokens = this.estimateHistoryTokens();
+      const threshold = this.contextWindow * 0.75;
+
+      if (estimatedTokens > threshold && this.messages.length > 6) {
+        yield { type: "tool", content: chalk.dim(`  \u27F3 Auto-compacting conversation (${estimatedTokens} est. tokens, limit: ${this.contextWindow})...\n`) };
+        try {
+          const result = await this.compactHistory();
+          yield { type: "tool", content: chalk.dim(`  \u23BF Compacted: removed ${result.removed} messages, kept ${result.kept}\n`) };
+        } catch {
+          // compact failure should not block the query
+        }
+      }
 
       const stream = await this.client.chat.completions.create(
         {
@@ -397,6 +430,12 @@ function formatToolInput(
       return input.description
         ? `${input.description}`
         : `${((input.prompt as string) || "").slice(0, 60)}...`;
+    case "taskcreate":
+      return `${input.description}`;
+    case "taskupdate":
+      return `#${input.id}${input.status ? ` → ${input.status}` : ""}`;
+    case "tasklist":
+      return "";
     default:
       if (toolName.startsWith("mcp_")) {
         const args = Object.entries(input)
@@ -464,6 +503,11 @@ function formatToolResult(toolName: string, result: string): string {
     case "agent":
       if (lines.length === 0) return "(no output)";
       return `${lines.length} lines from sub-agent`;
+    case "taskcreate":
+    case "taskupdate":
+      return truncLine(lines[0]);
+    case "tasklist":
+      return `${lines.length} task${lines.length !== 1 ? "s" : ""}`;
     default: {
       if (lines.length === 0) return "(empty)";
       return truncLine(lines[0]);

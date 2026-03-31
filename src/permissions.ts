@@ -1,6 +1,7 @@
 // Permission system — session-level tool authorization with interactive prompts
 
 import chalk from "chalk";
+import { saveUserConfig, getConfig } from "./config.js";
 
 // --- Type definitions ---
 
@@ -8,7 +9,7 @@ import chalk from "chalk";
 export type PermissionLevel = "safe" | "write" | "execute";
 
 /** User response to a permission prompt. */
-export type UserDecision = "allow-once" | "allow-always" | "deny";
+export type UserDecision = "allow-once" | "allow-always" | "deny" | "deny-always";
 
 /** Result of a permission check. */
 export interface PermissionResult {
@@ -54,17 +55,33 @@ async function promptUser(
   toolName: string,
   inputSummary: string
 ): Promise<UserDecision> {
-  const label = chalk.yellow(`  Allow ${toolName}`);
-  const detail = inputSummary ? chalk.dim(`(${inputSummary})`) : "";
-  const hint = chalk.dim(" [y/a/n] (y=once, a=always, n=deny) ");
-  process.stdout.write(`${label}${detail}?${hint}`);
+  const toolLine = chalk.bold.yellow(`  ⚠ ${toolName}`);
+  const detailLine = inputSummary ? chalk.dim(`    ${inputSummary}`) : "";
+  const choiceLine = `    ${chalk.green("y")}${chalk.dim("es")} / ${chalk.cyan("a")}${chalk.dim("lways")} / ${chalk.red("n")}${chalk.dim("o")} / ${chalk.red("d")}${chalk.dim("eny-always")} `;
+
+  process.stdout.write(`\n${toolLine}\n`);
+  if (detailLine) process.stdout.write(`${detailLine}\n`);
+  process.stdout.write(choiceLine);
 
   return new Promise((resolve) => {
     const wasRaw = process.stdin.isRaw;
+
+    // Temporarily remove other stdin listeners to prevent keystroke leaking
+    // into readline's input buffer (which would echo y/n/a/d into the prompt)
+    const savedData = process.stdin.rawListeners("data");
+    const savedKeypress = process.stdin.rawListeners("keypress");
+    process.stdin.removeAllListeners("data");
+    process.stdin.removeAllListeners("keypress");
+
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.once("data", (buf: Buffer) => {
       process.stdin.setRawMode(wasRaw ?? false);
+
+      // Restore other listeners
+      for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
+      for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
+
       const char = buf.toString();
 
       // Handle Ctrl+C gracefully
@@ -79,6 +96,8 @@ async function promptUser(
 
       if (lower === "a") {
         resolve("allow-always");
+      } else if (lower === "d") {
+        resolve("deny-always");
       } else if (lower === "n" || char === "\x1b") {
         resolve("deny");
       } else {
@@ -143,9 +162,29 @@ export async function checkPermission(
 
     case "allow-always":
       sessionRules.set(key, "allow");
-      return { granted: true, reason: "user: allow-always" };
+      // Persist to user config for cross-session memory
+      try {
+        const currentConfig = getConfig();
+        const permissions = { ...currentConfig.permissions, [key]: "allow" as const };
+        saveUserConfig({ permissions });
+      } catch {
+        // Persistence failure should not block current session
+      }
+      return { granted: true, reason: "user: allow-always (persisted)" };
 
     case "deny":
       return { granted: false, reason: "user: deny" };
+
+    case "deny-always":
+      sessionRules.set(key, "deny");
+      // Persist to user config for cross-session memory
+      try {
+        const currentConfig = getConfig();
+        const permissions = { ...currentConfig.permissions, [key]: "deny" as const };
+        saveUserConfig({ permissions });
+      } catch {
+        // Persistence failure should not block current session
+      }
+      return { granted: false, reason: "user: deny-always (persisted)" };
   }
 }

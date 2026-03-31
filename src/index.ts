@@ -11,11 +11,12 @@ import { QueryEngine, type EngineOptions } from "./engine.js";
 import { initSkills, registerMcpTools } from "./tools/index.js";
 import { executeSkill, type Skill } from "./skills.js";
 import { getMcpServers, closeMcp } from "./mcp.js";
-import { renderMarkdown } from "./markdown.js";
-import { loadConfig, type MccConfig } from "./config.js";
+import { renderMarkdown, renderDiff } from "./markdown.js";
+import { loadConfig, getConfig, saveUserConfig, type MccConfig } from "./config.js";
 import { loadContext, type LoadedContext } from "./context.js";
-import { initPermissions } from "./permissions.js";
+import { initPermissions, resetPermissions } from "./permissions.js";
 import { loadHooks, getHooks } from "./hooks.js";
+import { formatTaskList } from "./tasks.js";
 import {
   generateSessionId,
   saveSession,
@@ -73,6 +74,7 @@ ${chalk.bold("REPL Commands:")}
   /sessions   List saved sessions
   /hooks      List loaded hooks
   /mcp        List MCP servers and tools
+  /tasks      List all tasks
   /help       Show help
   /exit       Exit
 `);
@@ -219,6 +221,8 @@ ${chalk.bold("REPL Commands:")}
     { cmd: "/skills", desc: "List loaded skills" },
     { cmd: "/hooks", desc: "List loaded hooks" },
     { cmd: "/mcp", desc: "List MCP servers and tools" },
+    { cmd: "/permissions", desc: "Show permission rules" },
+    { cmd: "/tasks", desc: "List all tasks" },
     { cmd: "/exit", desc: "Exit" },
     ...skills.map((s) => ({ cmd: "/" + s.name, desc: s.description || "" })),
   ];
@@ -229,6 +233,66 @@ ${chalk.bold("REPL Commands:")}
     prompt: "\n" + chalk.blue("\u276f "),
     terminal: true,
   });
+
+  // ── Paste detection state ──
+  const pastedTexts = new Map<number, string>();
+  let pasteCount = 0;
+
+  /**
+   * Handle multi-line paste: collapse into a visual indicator,
+   * store actual content for expansion when Enter is pressed.
+   */
+  function handlePaste(rawText: string) {
+    const text = rawText
+      .replace(/\x1b\[200~/g, "")   // strip bracketed paste start
+      .replace(/\x1b\[201~/g, "")   // strip bracketed paste end
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n");
+
+    const currentLine = (rl as any).line as string;
+    const cursorPos = (rl as any).cursor as number;
+
+    // Build full content: existing input + pasted text
+    const before = currentLine.slice(0, cursorPos);
+    const after = currentLine.slice(cursorPos);
+    let fullContent = before + text + after;
+
+    // Check if ends with newline (auto-submit)
+    const autoSubmit = fullContent.endsWith("\n");
+    if (autoSubmit) fullContent = fullContent.replace(/\n+$/, "");
+
+    const lines = fullContent.split("\n");
+
+    // Single line after processing → insert normally
+    if (lines.length <= 1) {
+      const toInsert = text.replace(/\n+$/, "");
+      for (const ch of toInsert) {
+        origTtyWrite(ch, undefined);
+      }
+      if (autoSubmit) origTtyWrite("\r", { name: "return" });
+      return;
+    }
+
+    // Multi-line: collapse into indicator
+    pasteCount++;
+    pastedTexts.set(pasteCount, fullContent);
+
+    const lineCount = lines.length;
+    const indicator = `[Pasted text #${pasteCount} +${lineCount} lines]`;
+
+    // Clear current readline display and replace with indicator
+    clearMenu();
+    menuFiltered = [];
+    const rlCursor = (rl as any).cursor as number;
+    readline.moveCursor(process.stdout, -rlCursor, 0);
+    process.stdout.write("\x1b[K" + chalk.dim(indicator));
+    (rl as any).line = indicator;
+    (rl as any).cursor = indicator.length;
+
+    if (autoSubmit) {
+      origTtyWrite("\r", { name: "return" });
+    }
+  }
 
   // ── Dropdown menu state ──
   let menuFiltered: typeof cmdEntries = [];
@@ -299,6 +363,23 @@ ${chalk.bold("REPL Commands:")}
     (rl as any).cursor = selected.length;
   }
 
+  // ── Paste detection at stdin data level ──
+  // Readline in terminal mode splits data into per-character keypress events.
+  // We intercept raw stdin data BEFORE the keypress module to detect multi-line paste.
+  const origStdinEmit = process.stdin.emit.bind(process.stdin);
+  (process.stdin as any).emit = function (event: string | symbol, ...emitArgs: any[]) {
+    if (event === "data") {
+      const raw = emitArgs[0];
+      const str = typeof raw === "string" ? raw : (Buffer.isBuffer(raw) ? raw.toString() : String(raw));
+      // A real paste: multi-byte chunk containing newline characters
+      if (str.length > 1 && /[\n\r]/.test(str)) {
+        handlePaste(str);
+        return true; // swallow — don't let keypress module split it
+      }
+    }
+    return origStdinEmit(event, ...emitArgs);
+  };
+
   // Intercept readline key processing for menu navigation
   const origTtyWrite = (rl as any)._ttyWrite.bind(rl);
   (rl as any)._ttyWrite = function (s: string, key: any) {
@@ -350,7 +431,36 @@ ${chalk.bold("REPL Commands:")}
 
     if (busy) return;
 
-    const input = line.trim();
+    // Expand pasted text indicators back to real content
+    let input = line.trim();
+    let wasPaste = false;
+    if (pastedTexts.size > 0) {
+      input = input.replace(/\[Pasted text #(\d+) \+\d+ lines\]/g, (_match, id) => {
+        const pasteId = parseInt(id, 10);
+        const content = pastedTexts.get(pasteId);
+        if (content) {
+          pastedTexts.delete(pasteId);
+          wasPaste = true;
+          return content;
+        }
+        return _match;
+      });
+    }
+
+    // Show expanded paste content preview
+    if (wasPaste && input) {
+      const previewLines = input.split("\n");
+      const maxPreview = 4;
+      console.log(chalk.dim("  ⎿ Pasted content:"));
+      for (let i = 0; i < Math.min(previewLines.length, maxPreview); i++) {
+        const pl = previewLines[i].length > 100 ? previewLines[i].slice(0, 100) + "…" : previewLines[i];
+        console.log(chalk.dim(`    ${pl}`));
+      }
+      if (previewLines.length > maxPreview) {
+        console.log(chalk.dim(`    … +${previewLines.length - maxPreview} more lines`));
+      }
+    }
+
     if (!input) {
       rl.prompt();
       return;
@@ -643,7 +753,7 @@ function handleBuiltinCommand(
         if (!diff) {
           console.log(chalk.dim("No changes detected."));
         } else {
-          console.log(renderMarkdown("```diff\n" + diff + "\n```"));
+          console.log(renderDiff(diff));
         }
       } catch {
         console.log(chalk.dim("Not a git repository or git not available."));
@@ -670,21 +780,76 @@ function handleBuiltinCommand(
       return true;
     }
 
+    case "/permissions": {
+      const permArgs = input.slice("/permissions".length).trim().toLowerCase();
+      const cfg = getConfig();
+
+      if (permArgs === "reset") {
+        // Reset all permission rules
+        saveUserConfig({ permissions: {} });
+        resetPermissions();
+        // Reload config to clear cached permissions
+        loadConfig();
+        initPermissions({});
+        console.log(chalk.green("All permission rules have been reset."));
+        return true;
+      }
+
+      if (permArgs.startsWith("reset ")) {
+        // Reset a specific tool's permission: /permissions reset bash
+        const toolName = permArgs.slice("reset ".length).trim();
+        const currentPerms = { ...cfg.permissions };
+        delete currentPerms[toolName];
+        saveUserConfig({ permissions: currentPerms });
+        resetPermissions();
+        loadConfig();
+        initPermissions(currentPerms);
+        console.log(chalk.green(`Permission rule for "${toolName}" has been reset.`));
+        return true;
+      }
+
+      // Default: show current rules
+      const perms = cfg.permissions;
+      const entries = Object.entries(perms);
+      if (entries.length === 0) {
+        console.log(chalk.dim("\nNo persistent permission rules."));
+      } else {
+        console.log(chalk.bold("\nPermission Rules:"));
+        for (const [tool, action] of entries) {
+          const color = action === "allow" ? chalk.green : action === "deny" ? chalk.red : chalk.yellow;
+          console.log(`  ${tool}: ${color(action)}`);
+        }
+      }
+      console.log(chalk.dim("\nUsage:"));
+      console.log(chalk.dim("  /permissions              Show all rules"));
+      console.log(chalk.dim("  /permissions reset        Reset all rules"));
+      console.log(chalk.dim("  /permissions reset bash   Reset rule for specific tool"));
+      return true;
+    }
+
+    case "/tasks": {
+      console.log(chalk.bold("\nTasks:"));
+      console.log(formatTaskList());
+      return true;
+    }
+
     case "/help":
       console.log(`
 ${chalk.bold("Commands:")}
-  /compact    Compress conversation history
-  /clear      Clear conversation history
-  /cost       Show token usage
-  /resume     Resume most recent session
-  /sessions   List saved sessions
-  /diff       Show git diff
-  /status     Show git status
-  /skills     List loaded skills
-  /hooks      List loaded hooks
-  /mcp        List MCP servers and tools
-  /exit       Exit
-  /help       Show this help
+  /compact      Compress conversation history
+  /clear        Clear conversation history
+  /cost         Show token usage
+  /resume       Resume most recent session
+  /sessions     List saved sessions
+  /diff         Show git diff
+  /status       Show git status
+  /skills       List loaded skills
+  /hooks        List loaded hooks
+  /mcp          List MCP servers and tools
+  /permissions  Show permission rules
+  /tasks        List all tasks
+  /exit         Exit
+  /help         Show this help
 ${skills.length > 0 ? `\n${chalk.bold("Skills:")} ${skills.map((s) => "/" + s.name).join(", ")}` : ""}
 `);
       return true;

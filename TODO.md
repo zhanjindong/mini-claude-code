@@ -1,162 +1,270 @@
-# TODO.md — Phase 1 开发任务清单
+# TODO.md — mini-claude-code 开发任务清单
 
-> 关联设计版本: DESIGN.md v0.1.0
+> 关联设计: DESIGN.md
 > 创建日期: 2026-03-31
-> 总进度: 14/18
+> 最后更新: 2026-04-01
+> 总进度: 45/45 ✅
 
 ---
 
-## 阶段一：数据与配置层（无外部依赖）
+## Phase 0：核心骨架
 
-### T-01 实现 config.ts 基础结构
-- **文件**: `src/config.ts`（新建）
-- **内容**: 定义 `MccConfig`、`ResolvedConfig` 接口；实现 `defaults` 常量
-- **完成标准**: 类型定义完整，TypeScript 编译通过
-- **状态**: [x]
+### P0-01 项目初始化与基础 REPL
+- **文件**: `package.json`、`tsconfig.json`、`src/index.ts`
+- **内容**: 初始化 TypeScript 项目，搭建 readline REPL 交互循环，解析 CLI 参数（--provider/--model/--base-url/--api-key/-p），实现 /help /clear /exit 基础命令
+- **状态**: [x] ✅
 
-### T-02 实现 config.ts — 文件读取与合并
-- **文件**: `src/config.ts`
-- **内容**: 实现 `loadConfig(overrides?)`，读取 `~/.mcc/config.json` 和 `.mcc/config.json`，JSON 解析失败静默跳过，合并环境变量（`API_KEY`、`MCC_PROVIDER`、`MCC_MODEL`、`MCC_BASE_URL`）
-- **完成标准**: 当两个 config.json 都不存在时返回 defaults；当项目 config.json 存在时其值覆盖用户配置
-- **状态**: [x]
-
-### T-03 实现 config.ts — 单例与 saveUserConfig
-- **文件**: `src/config.ts`
-- **内容**: 实现模块级缓存单例 `getConfig()`；实现 `saveUserConfig(patch)` 写入 `~/.mcc/config.json`（目录不存在时 mkdirSync）
-- **完成标准**: 多次调用 `getConfig()` 返回同一对象引用；`saveUserConfig` 正确合并并写入
-- **状态**: [x]
-
-### T-04 实现 context.ts — 路径收集与文件读取
-- **文件**: `src/context.ts`（新建）
-- **内容**: 实现 `collectCandidates(cwd)` 搜索路径列表（user → parent dirs → project → project-local）；读取存在的文件，构建 `ContextFile[]`；限制父目录遍历最多 10 层，不超过 `os.homedir()`
-- **完成标准**: 在有 CLAUDE.md 的项目目录下调用，能正确找到并读取文件
-- **状态**: [x]
-
-### T-05 实现 context.ts — 内容拼接与缓存
-- **文件**: `src/context.ts`
-- **内容**: 将多个 ContextFile 按优先级顺序拼接为 `combinedContent`（每段用 `<claude-md source="...">` 包裹）；实现进程内缓存，`clearContextCache()` 清除缓存
-- **完成标准**: 多次调用 `loadContext()` 返回相同对象（缓存生效）；`clearContextCache()` 后再次调用重新读取文件系统
-- **状态**: [x]
-
----
-
-## 阶段二：权限系统
-
-### T-06 修改 types.ts — 增加 permissionLevel 字段
+### P0-02 类型定义
 - **文件**: `src/types.ts`
-- **内容**: `ToolDefinition` 增加 `permissionLevel?: "safe" | "write" | "execute"`
-- **完成标准**: TypeScript 编译通过，现有工具文件无需修改即可编译（字段可选）
-- **状态**: [x]
+- **内容**: 定义 ToolDefinition / ToolInput 接口，Message / ContentBlock 类型
+- **状态**: [x] ✅
 
-### T-07 为各工具声明 permissionLevel
-- **文件**: `src/tools/bash.ts`、`src/tools/write.ts`、`src/tools/edit.ts`、`src/tools/read.ts`、`src/tools/glob.ts`、`src/tools/grep.ts`
-- **内容**: 
-  - `bash.ts`: `permissionLevel: "execute"`
-  - `write.ts`: `permissionLevel: "write"`
-  - `edit.ts`: `permissionLevel: "write"`
-  - `read.ts`: `permissionLevel: "safe"`
-  - `glob.ts`: `permissionLevel: "safe"`
-  - `grep.ts`: `permissionLevel: "safe"`
-- **完成标准**: 所有工具文件编译通过，`permissionLevel` 字段正确赋值
-- **状态**: [x]
+### P0-03 QueryEngine 流式调用
+- **文件**: `src/engine.ts`
+- **内容**: 实现 QueryEngine 类，使用 OpenAI SDK 流式调用 chat.completions API，支持多 provider 预设（MiniMax/DeepSeek/OpenAI/OpenRouter），yield text/tool chunks，追踪 token 用量
+- **状态**: [x] ✅
 
-### T-08 实现 permissions.ts — 会话规则与决策树
+### P0-04 工具执行循环
+- **文件**: `src/engine.ts`
+- **内容**: 在流式响应中累积 tool_calls，解析 JSON 参数，调用 tool.execute()，将结果回传为 tool message，循环直到无工具调用。`<think>` 标签过滤
+- **状态**: [x] ✅
+
+### P0-05 内置工具 — Bash
+- **文件**: `src/tools/bash.ts`
+- **内容**: execSync 执行 shell 命令，支持超时控制、stderr 合并输出、结果截断
+- **状态**: [x] ✅
+
+### P0-06 内置工具 — Read
+- **文件**: `src/tools/read.ts`
+- **内容**: 文件读取，支持 offset/limit 行范围参数，带行号输出
+- **状态**: [x] ✅
+
+### P0-07 内置工具 — Write
+- **文件**: `src/tools/write.ts`
+- **内容**: 文件创建/覆写，自动创建父目录
+- **状态**: [x] ✅
+
+### P0-08 内置工具 — Edit
+- **文件**: `src/tools/edit.ts`
+- **内容**: 精确字符串替换编辑，支持 replace_all，唯一性检查
+- **状态**: [x] ✅
+
+### P0-09 内置工具 — Glob
+- **文件**: `src/tools/glob.ts`
+- **内容**: glob 模式匹配文件搜索，支持指定目录
+- **状态**: [x] ✅
+
+### P0-10 内置工具 — Grep
+- **文件**: `src/tools/grep.ts`
+- **内容**: 正则表达式内容搜索，调用系统 grep/rg
+- **状态**: [x] ✅
+
+### P0-11 工具注册表
+- **文件**: `src/tools/index.ts`
+- **内容**: ALL_TOOLS 数组管理所有工具，toOpenAITools() 转换为 OpenAI function 格式，getToolByName() 查找
+- **状态**: [x] ✅
+
+### P0-12 Skills 系统
+- **文件**: `src/skills.ts`
+- **内容**: YAML frontmatter 解析，双级目录扫描（项目级覆盖用户级），参数替换（`{{ arg }}`），Skill tool 动态注册，getSkillsSummary() 注入系统提示词
+- **状态**: [x] ✅
+
+### P0-13 终端 Markdown 渲染
+- **文件**: `src/markdown.ts`
+- **内容**: 自定义轻量渲染器（替代 marked-terminal），支持标题、代码块（语言标注）、无序/有序列表、引用、行内样式（粗体/斜体/删除线/行内代码/链接）、水平线
+- **状态**: [x] ✅
+
+### P0-14 命令下拉菜单
+- **文件**: `src/index.ts`
+- **内容**: 拦截 `_ttyWrite` 实现 `/` 前缀下拉菜单，上下键导航、Tab 补全、Escape 关闭，最多显示 8 项 + "... +N more"
+- **状态**: [x] ✅
+
+### P0-15 Thinking Spinner
+- **文件**: `src/index.ts`
+- **内容**: 等待模型响应时显示 Braille 字符动画（80ms 帧率），收到首 chunk 后停止
+- **状态**: [x] ✅
+
+### P0-16 请求中断支持
+- **文件**: `src/index.ts`、`src/engine.ts`
+- **内容**: Ctrl+C / Escape 通过 AbortController 中断 API 请求，stream 中检查 signal.aborted 提前退出
+- **状态**: [x] ✅
+
+### P0-17 单次模式
+- **文件**: `src/index.ts`
+- **内容**: `-p` / `--prompt` 或直接传参执行单次查询后退出
+- **状态**: [x] ✅
+
+---
+
+## Phase 1：配置、上下文、权限
+
+### P1-01 config.ts — 类型定义与默认值
+- **文件**: `src/config.ts`（新建）
+- **内容**: MccConfig / ResolvedConfig 接口定义，defaults 常量
+- **状态**: [x] ✅
+
+### P1-02 config.ts — 文件读取与合并
+- **文件**: `src/config.ts`
+- **内容**: loadConfig(overrides?) 读取 `~/.mcc/config.json` + `.mcc/config.json`，合并环境变量（API_KEY/MCC_PROVIDER/MCC_MODEL/MCC_BASE_URL），四层合并链
+- **状态**: [x] ✅
+
+### P1-03 config.ts — 单例与 saveUserConfig
+- **文件**: `src/config.ts`
+- **内容**: getConfig() 单例，saveUserConfig(patch) 写入 `~/.mcc/config.json`
+- **状态**: [x] ✅
+
+### P1-04 context.ts — 路径收集与文件读取
+- **文件**: `src/context.ts`（新建）
+- **内容**: collectCandidates(cwd) 五级搜索路径，readFileSync 逐一尝试，ContextFile 数组
+- **状态**: [x] ✅
+
+### P1-05 context.ts — 内容拼接与缓存
+- **文件**: `src/context.ts`
+- **内容**: `<claude-md source="...">` 格式拼接，进程内缓存，clearContextCache()
+- **状态**: [x] ✅
+
+### P1-06 types.ts — 增加 permissionLevel 字段
+- **文件**: `src/types.ts`
+- **内容**: ToolDefinition 增加 `permissionLevel?: "safe" | "write" | "execute"`
+- **状态**: [x] ✅
+
+### P1-07 各工具声明 permissionLevel
+- **文件**: `src/tools/*.ts`
+- **内容**: bash→execute, write/edit→write, read/glob/grep→safe
+- **状态**: [x] ✅
+
+### P1-08 permissions.ts — 会话规则与决策树
 - **文件**: `src/permissions.ts`（新建）
-- **内容**: 定义 `SessionRules` Map；实现 `initPermissions(config)` 从 config 预设加载初始规则；实现决策树逻辑（config 预设 → 会话规则 → permissionLevel 检查 → 询问用户）
-- **完成标准**: safe 级工具直接返回 `granted: true`；已有 config 预设的工具不需询问
-- **状态**: [x]
+- **内容**: SessionRules Map，initPermissions() 从 config 加载，决策树逻辑
+- **状态**: [x] ✅
 
-### T-09 实现 permissions.ts — stdin raw mode 用户交互
+### P1-09 permissions.ts — stdin raw mode 交互
 - **文件**: `src/permissions.ts`
-- **内容**: 实现 `promptUser(message)` 使用 stdin raw mode 读取单字符；处理 y/a/n/Escape/Enter；读取完成后恢复原始 stdin 状态
-- **完成标准**: 在 REPL 模式下手动测试，输入 y/a/n 分别得到 allow-once/allow-always/deny；Ctrl+C 不崩溃
-- **状态**: [x]
+- **内容**: promptUser() stdin raw mode 单字符读取，y/a/n/d/Escape/Enter 处理，临时移除/恢复 data/keypress 监听器
+- **状态**: [x] ✅
 
-### T-10 实现 permissions.ts — checkPermission 导出函数
+### P1-10 permissions.ts — checkPermission 与持久化
 - **文件**: `src/permissions.ts`
-- **内容**: 实现并导出 `checkPermission(toolName, inputSummary, config)`，整合决策树和用户交互；allow-always 结果写入会话 sessionRules
-- **完成标准**: 对同一工具选择 allow-always 后，后续调用无需再次询问
-- **状态**: [x]
+- **内容**: checkPermission() 导出函数，allow-always/deny-always 写入 sessionRules + 持久化到 config
+- **状态**: [x] ✅
 
----
-
-## 阶段三：引擎层集成
-
-### T-11 修改 engine.ts — buildSystemPrompt 接收 contextContent
+### P1-11 engine.ts — contextContent 注入
 - **文件**: `src/engine.ts`
-- **内容**: `buildSystemPrompt(skillsSummary?, contextContent?)` 增加第二个参数；当 contextContent 非空时追加到提示词末尾（用 `\n\n---\n\n` 分隔）；`EngineOptions` 增加 `contextContent?: string`；QueryEngine 构造器存储并在 `query()` 中传给 `buildSystemPrompt`
-- **完成标准**: 传入 contextContent 时，API 请求的 system message 包含 CLAUDE.md 内容
-- **状态**: [x]
+- **内容**: buildSystemPrompt(skillsSummary?, contextContent?)，EngineOptions 增加 contextContent
+- **状态**: [x] ✅
 
-### T-12 修改 engine.ts — 工具执行循环插入权限检查
+### P1-12 engine.ts — 权限检查 + Hooks 调用
 - **文件**: `src/engine.ts`
-- **内容**: 在工具执行循环中（`tool.execute` 调用前）调用 `checkPermission(toolName, inputSummary, getConfig())`；被拒绝时 yield 拒绝提示、push tool error 消息、continue 跳过执行
-- **完成标准**: Bash 工具首次执行时弹出权限询问；Read 工具无需确认直接执行
-- **状态**: [x]
+- **内容**: 工具执行前 checkPermission() + beforeToolUse hooks，执行后 afterToolResult hooks
+- **状态**: [x] ✅
+
+### P1-13 index.ts — 初始化顺序整合
+- **文件**: `src/index.ts`
+- **内容**: main() 中依次 loadConfig → initPermissions → loadHooks → loadContext → initSkills → registerMcpTools → new QueryEngine
+- **状态**: [x] ✅
+
+### P1-14 index.ts — banner 显示 context/MCP 信息
+- **文件**: `src/index.ts`
+- **内容**: printBanner 显示 provider/model/cwd/skills/MCP/context 加载信息
+- **状态**: [x] ✅
 
 ---
 
-## 阶段四：入口层整合
+## Phase 2：MCP、Hooks、会话、Agent、扩展工具
 
-### T-13 修改 index.ts — 初始化顺序整合
+### P2-01 mcp.ts — McpConnection 类
+- **文件**: `src/mcp.ts`（新建）
+- **内容**: JSON-RPC 2.0 over stdin/stdout，spawn 子进程，请求/响应 pending Map，30s 超时，buffer 行分割
+- **状态**: [x] ✅
+
+### P2-02 mcp.ts — 初始化与工具发现
+- **文件**: `src/mcp.ts`
+- **内容**: initMcp() 读取配置，逐个连接服务器，initialize + tools/list，注册为 `mcp_{server}_{tool}` 命名的 ToolDefinition
+- **状态**: [x] ✅
+
+### P2-03 mcp.ts — 配置加载与连接管理
+- **文件**: `src/mcp.ts`
+- **内容**: loadMcpConfig() 读取 `.mcc/mcp.json` / `~/.mcc/mcp.json`，getMcpServers() 连接信息，closeMcp() 清理
+- **状态**: [x] ✅
+
+### P2-04 hooks.ts — 加载与匹配
+- **文件**: `src/hooks.ts`（新建）
+- **内容**: loadHooks() 从 `.mcc/hooks.json` / `~/.mcc/hooks.json` 加载，findMatchingHooks() 按 event + toolName 过滤
+- **状态**: [x] ✅
+
+### P2-05 hooks.ts — 执行与阻断
+- **文件**: `src/hooks.ts`
+- **内容**: executeHook() execSync + env 注入 + timeout，runHooks() 串行执行，beforeToolUse 非零退出阻断工具
+- **状态**: [x] ✅
+
+### P2-06 session.ts — 保存/加载/列表
+- **文件**: `src/session.ts`（新建）
+- **内容**: saveSession() / loadSession() / listSessions() / getLastSession()，存储到 `~/.mcc/sessions/`，SessionData 含完整 messages
+- **状态**: [x] ✅
+
+### P2-07 session.ts — 恢复与集成
+- **文件**: `src/session.ts`、`src/index.ts`
+- **内容**: generateSessionId()、extractSummary()，`--resume` CLI + `/resume` 命令，每次查询后 persistSession()
+- **状态**: [x] ✅
+
+### P2-08 WebFetch 工具
+- **文件**: `src/tools/webfetch.ts`（新建）
+- **内容**: URL 验证（仅 http/https），fetch + 30s 超时，HTML stripHtml 文本提取，50000 字符截断
+- **状态**: [x] ✅
+
+### P2-09 Agent 工具
+- **文件**: `src/tools/agent.ts`（新建）
+- **内容**: 创建独立 QueryEngine 实例，收集文本+工具输出，30000 字符截断
+- **状态**: [x] ✅
+
+### P2-10 Task 任务管理
+- **文件**: `src/tasks.ts`（新建）、`src/tools/task.ts`（新建）
+- **内容**: 内存 Map 存储，TaskCreate/TaskUpdate/TaskList 三个工具，状态图标显示，`/tasks` 命令
+- **状态**: [x] ✅
+
+### P2-11 自动上下文压缩
+- **文件**: `src/engine.ts`
+- **内容**: estimateHistoryTokens()（chars/3），超过 contextWindow*0.75 触发 compactHistory()，LLM 摘要旧消息，保留最近 4 条
+- **状态**: [x] ✅
+
+### P2-12 多行粘贴检测
 - **文件**: `src/index.ts`
-- **内容**: 在 `main()` 开头依次调用：① `loadConfig(cliOverrides)` ② `initPermissions(config)` ③ `loadContext(process.cwd())`；将 `config` 中的 provider/model/apiKey 等传给 `EngineOptions`；将 `context.combinedContent` 传给 `EngineOptions.contextContent`
-- **完成标准**: CLI 参数（--provider 等）仍然生效；config.json 中的默认 provider 被正确读取
-- **状态**: [x]
+- **内容**: 拦截 stdin.emit("data")，多字节含换行 → handlePaste()，折叠为 `[Pasted text #N]` 指示器，提交时展开+预览
+- **状态**: [x] ✅
 
-### T-14 修改 index.ts — banner 显示 context 加载信息
+### P2-13 Diff 渲染 + /diff /status 命令
+- **文件**: `src/markdown.ts`、`src/index.ts`
+- **内容**: renderDiff() 按行着色，/diff 执行 git diff HEAD，/status 执行 git status --short
+- **状态**: [x] ✅
+
+### P2-14 /permissions 命令
 - **文件**: `src/index.ts`
-- **内容**: `printBanner` 函数中，当 `loadedContext.files.length > 0` 时显示已加载的 CLAUDE.md 文件列表（文件路径 + source 类型）
-- **完成标准**: 有 CLAUDE.md 时 banner 显示如 `Context: CLAUDE.md (project), ~/.claude/CLAUDE.md (user)`
-- **状态**: [x]
-
----
-
-## 阶段五：验证与收尾
-
-### T-15 端到端验证 — CLAUDE.md 注入
-- **文件**: 无需修改（手动验证）
-- **内容**: 在项目根目录创建测试用 CLAUDE.md，启动 REPL，询问 AI "你有什么特别的指令？"，验证 AI 能引用 CLAUDE.md 中的内容
-- **完成标准**: AI 回答能体现 CLAUDE.md 中写入的内容
-- **状态**: [ ]
-
-### T-16 端到端验证 — 权限系统
-- **内容**: 启动 REPL，输入 `运行 ls 命令`，验证出现权限询问；选 n 验证被拒绝；重新运行，选 a，验证同会话内第二次调用无需询问；Read 工具直接执行无询问
-- **完成标准**: 以上三种场景行为符合预期
-- **状态**: [ ]
-
-### T-17 端到端验证 — 配置系统
-- **内容**: 在 `.mcc/config.json` 写入 `{"provider": "deepseek"}`，启动 REPL，验证 banner 显示 deepseek；CLI 参数 `--provider openai` 应覆盖 config.json 的设置
-- **完成标准**: 配置层级覆盖顺序正确
-- **状态**: [ ]
-
-### T-18 编译检查与 README 更新
-- **文件**: `README.md`、TypeScript 编译
-- **内容**: 运行 `npm run build` 确认无编译错误；在 README.md 中补充配置文件说明（`.mcc/config.json` 支持的字段）、CLAUDE.md 加载说明、权限系统说明
-- **完成标准**: `npm run build` 通过；README 新增配置相关章节
-- **状态**: [ ]
+- **内容**: /permissions 查看规则，/permissions reset 重置全部，/permissions reset {tool} 重置单个
+- **状态**: [x] ✅
 
 ---
 
 ## 任务依赖关系
 
 ```
-T-01 → T-02 → T-03
-T-04 → T-05
-T-06 → T-07
-T-08 → T-09 → T-10
+Phase 0:
+P0-01 → P0-02 → P0-03 → P0-04 → P0-05~10 → P0-11 → P0-12
+                                                        ↓
+                                              P0-13 ~ P0-17 (并行)
 
-T-01/T-02 ─────────────────────────────────┐
-T-04/T-05 ──────────────────────────────┐  │
-T-06/T-07/T-08/T-09/T-10 ───────────┐  │  │
-                                     ↓  ↓  ↓
-                                 T-11/T-12
-                                      ↓
-                                     T-13
-                                      ↓
-                                     T-14
-                                      ↓
-                               T-15/T-16/T-17
-                                      ↓
-                                     T-18
+Phase 1:
+P1-01 → P1-02 → P1-03
+P1-04 → P1-05
+P1-06 → P1-07
+P1-08 → P1-09 → P1-10
+  ↘       ↓       ↙
+   P1-11 / P1-12
+        ↓
+   P1-13 → P1-14
+
+Phase 2:
+P2-01 → P2-02 → P2-03
+P2-04 → P2-05
+P2-06 → P2-07
+P2-08 / P2-09 / P2-10 / P2-11 / P2-12 / P2-13 / P2-14 (可并行)
 ```
