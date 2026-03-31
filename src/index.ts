@@ -118,7 +118,7 @@ ${chalk.bold("REPL Commands:")}
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: chalk.blue("\n❯ "),
+    prompt: "\n" + chalk.blue("❯ "),
     terminal: true,
   });
 
@@ -253,7 +253,7 @@ ${chalk.bold("REPL Commands:")}
       if (skill) {
         const argsStr = spaceIdx === -1 ? undefined : input.slice(spaceIdx + 1).trim() || undefined;
         const expanded = executeSkill(skill, argsStr);
-        console.log(chalk.cyan(`\n> /${skill.name}`) + (argsStr ? chalk.dim(` ${argsStr}`) : ""));
+        console.log(chalk.cyan(`> /${skill.name}`) + (argsStr ? chalk.dim(` ${argsStr}`) : ""));
         rl.pause();
         await runQuery(engine, expanded);
         rl.resume();
@@ -305,13 +305,13 @@ function createSpinner() {
 }
 
 async function runQuery(engine: QueryEngine, input: string) {
-  process.stdout.write("\n");
   let textBuffer = "";
   const spinner = createSpinner();
 
   function flushText() {
     if (!textBuffer) return;
-    process.stdout.write(renderMarkdown(textBuffer));
+    const rendered = renderMarkdown(textBuffer).replace(/\n{3,}/g, "\n\n").trimEnd();
+    process.stdout.write(rendered + "\n");
     textBuffer = "";
   }
 
@@ -356,8 +356,8 @@ function handleBuiltinCommand(
   switch (cmd) {
     case "/exit":
     case "/quit":
-      rl.close();
-      return true;
+      console.log(chalk.dim("\nGoodbye!"));
+      process.exit(0);
 
     case "/clear":
       engine.clearHistory();
