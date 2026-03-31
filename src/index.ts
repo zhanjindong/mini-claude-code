@@ -123,6 +123,23 @@ ${chalk.bold("REPL Commands:")}
     },
   });
 
+  // Inline ghost text hint (like Claude Code / fish shell)
+  process.stdin.on("keypress", () => {
+    setImmediate(() => {
+      const line = rl.line;
+      // Clear any previous ghost text
+      process.stdout.write("\x1b[K");
+
+      if (!line || !line.startsWith("/") || line.includes(" ")) return;
+
+      const match = allCmds.find((c) => c.startsWith(line.toLowerCase()));
+      if (match && match.toLowerCase() !== line.toLowerCase()) {
+        const ghost = match.slice(line.length);
+        process.stdout.write(`\x1b[90m${ghost}\x1b[39m\x1b[${ghost.length}D`);
+      }
+    });
+  });
+
   rl.prompt();
 
   rl.on("line", async (line) => {
