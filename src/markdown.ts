@@ -91,8 +91,8 @@ function renderInline(line: string): string {
   if (headerMatch) {
     const level = headerMatch[1].length;
     const text = applyInlineStyles(headerMatch[2]);
-    if (level <= 2) return chalk.bold.underline(text);
-    return chalk.bold(text);
+    if (level <= 2) return chalk.bold.underline.white(text);
+    return chalk.bold.white(text);
   }
 
   // Horizontal rule
@@ -130,9 +130,9 @@ function applyInlineStyles(text: string): string {
   text = text.replace(/\*{3}(.+?)\*{3}/g, (_, t) => chalk.bold.italic(t));
   text = text.replace(/_{3}(.+?)_{3}/g, (_, t) => chalk.bold.italic(t));
 
-  // Bold: **text** or __text__
-  text = text.replace(/\*{2}(.+?)\*{2}/g, (_, t) => chalk.bold(t));
-  text = text.replace(/_{2}(.+?)_{2}/g, (_, t) => chalk.bold(t));
+  // Bold: **text** or __text__ (use white+bold for visibility)
+  text = text.replace(/\*{2}(.+?)\*{2}/g, (_, t) => chalk.bold.white(t));
+  text = text.replace(/_{2}(.+?)_{2}/g, (_, t) => chalk.bold.white(t));
 
   // Italic: *text* or _text_
   text = text.replace(/(?<!\w)\*(.+?)\*(?!\w)/g, (_, t) => chalk.italic(t));

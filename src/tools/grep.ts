@@ -6,7 +6,7 @@ export const GrepTool: ToolDefinition = {
   name: "Grep",
   permissionLevel: "safe",
   description:
-    "Search file contents using ripgrep (rg). Supports regex patterns. Falls back to grep if rg is not installed.",
+    "Search file contents using ripgrep (rg). Supports regex patterns, context lines, and multiple output modes. Falls back to grep if rg is not installed.",
   inputSchema: {
     type: "object",
     properties: {
@@ -20,11 +20,28 @@ export const GrepTool: ToolDefinition = {
       },
       glob: {
         type: "string",
-        description: "File glob filter (e.g., '*.ts')",
+        description: 'File glob filter (e.g., "*.ts", "*.{js,jsx}")',
       },
       case_insensitive: {
         type: "boolean",
         description: "Case insensitive search",
+      },
+      context_lines: {
+        type: "number",
+        description: "Number of context lines to show before and after each match (like grep -C)",
+      },
+      output_mode: {
+        type: "string",
+        enum: ["content", "files_with_matches", "count"],
+        description: 'Output mode: "content" (default, shows matching lines), "files_with_matches" (file paths only), "count" (match counts per file)',
+      },
+      multiline: {
+        type: "boolean",
+        description: "Enable multiline matching where . matches newlines",
+      },
+      head_limit: {
+        type: "number",
+        description: "Limit output to first N results",
       },
     },
     required: ["pattern"],
@@ -34,10 +51,13 @@ export const GrepTool: ToolDefinition = {
     const searchPath = resolve((input.path as string) || process.cwd());
     const fileGlob = input.glob as string | undefined;
     const caseInsensitive = input.case_insensitive as boolean | undefined;
+    const contextLines = input.context_lines as number | undefined;
+    const outputMode = (input.output_mode as string) || "content";
+    const multiline = input.multiline as boolean | undefined;
+    const headLimit = input.head_limit as number | undefined;
 
-    // Try ripgrep first, fallback to grep
     const useRg = hasCommand("rg");
-    const MAX_LINES = 200;
+    const MAX_LINES = headLimit || 200;
 
     try {
       let cmd: string;
@@ -49,6 +69,16 @@ export const GrepTool: ToolDefinition = {
         args.push("--glob", "!node_modules");
         if (fileGlob) args.push("--glob", fileGlob);
         if (caseInsensitive) args.push("-i");
+        if (multiline) args.push("-U", "--multiline-dotall");
+        if (contextLines && contextLines > 0) args.push("-C", String(contextLines));
+
+        // Output mode flags
+        if (outputMode === "files_with_matches") {
+          args.push("-l");
+        } else if (outputMode === "count") {
+          args.push("-c");
+        }
+
         args.push("--", JSON.stringify(pattern).slice(1, -1));
         args.push(JSON.stringify(searchPath));
         cmd = args.join(" ");
@@ -56,6 +86,9 @@ export const GrepTool: ToolDefinition = {
         const args = ["grep", "-rn", "--include='*'"];
         if (fileGlob) args.push(`--include='${fileGlob}'`);
         if (caseInsensitive) args.push("-i");
+        if (contextLines && contextLines > 0) args.push(`-C ${contextLines}`);
+        if (outputMode === "files_with_matches") args.push("-l");
+        if (outputMode === "count") args.push("-c");
         args.push(`'${pattern}'`);
         args.push(JSON.stringify(searchPath));
         cmd = args.join(" ");

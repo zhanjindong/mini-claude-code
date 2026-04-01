@@ -23,7 +23,7 @@
 | | TaskCreate/Update/List | 会话级任务跟踪，多步操作进度管理 |
 | | Skill | 模型自动调用 Skill 指令模板 |
 | **Skills 系统** | Markdown 定义 | 用 YAML frontmatter + Markdown 定义可复用指令模板 |
-| | 双级加载 | 项目级 `.mini-claude-code/skills/` + 用户级 `~/.mini-claude-code/skills/` |
+| | 双级加载 | 项目级 `.mcc/skills/` + 用户级 `~/.mcc/skills/` |
 | | 参数支持 | 支持 `{{ argument }}` 模板变量 |
 | | 双向调用 | 用户通过 `/skill-name` 调用，模型通过 Skill tool 自动调用 |
 | **MCP 协议** | stdio 传输 | 通过 JSON-RPC 2.0 over stdin/stdout 连接 MCP 服务器 |
@@ -99,13 +99,13 @@ Skills 是用 Markdown + YAML frontmatter 定义的可复用指令模板。
 ### 目录结构
 
 ```
-.mini-claude-code/skills/     # 项目级（优先级高）
+.mcc/skills/     # 项目级（优先级高）
   commit/
     SKILL.md
   hello/
     SKILL.md
 
-~/.mini-claude-code/skills/   # 用户级
+~/.mcc/skills/   # 用户级
   my-skill/
     SKILL.md
 ```

@@ -1,6 +1,6 @@
 # 工作交接
 
-> 最后更新: 2026-04-01 00:26
+> 最后更新: 2026-04-01 15:19
 > 更新者: Jindong Zhan
 > 分支: main
 
@@ -10,30 +10,39 @@ Phase 1 技术方案设计完成，等待 develop agent 实现。DESIGN.md 和 T
 
 ## 本次改动
 - `.claude/memory/handoff.md`
-- `.claude/settings.json`
-- `DESIGN.md`
+- `.claude/memory/MEMORY.md`
+- `.gitignore`
 - `package-lock.json`
 - `README.md`
-- `src/config.ts`
 - `src/engine.ts`
 - `src/index.ts`
 - `src/markdown.ts`
-- `src/permissions.ts`
-- `src/tasks.ts`
+- `src/skills.ts`
+- `src/tools/agent.ts`
+- `src/tools/askuser.ts`
+- `src/tools/bash.ts`
+- `src/tools/grep.ts`
 - `src/tools/index.ts`
-- `src/tools/task.ts`
-- `tests/diff.test.ts`
-- `tests/tasks.test.ts`
-- `TODO.md`
-- `vitest.config.ts`
+- `src/tools/websearch.ts`
+- `src/types.ts`
+- `tmp/crm_system/__pycache__/customer_service.cpython-313.pyc`
+- `tmp/crm_system/__pycache__/models.cpython-313.pyc`
+- `tmp/crm_system/__pycache__/storage.cpython-313.pyc`
+- `tmp/crm_system/cli.py`
+- `tmp/crm_system/customer_service.py`
+- `tmp/crm_system/data/customers.json`
+- `tmp/crm_system/main.py`
+- `tmp/crm_system/models.py`
+- `tmp/crm_system/storage.py`
+- `tmp/crm_system/test_crm.py`
 
 ## 最近提交
 ```
+8b77075 Update README with full feature table and add tasks, diff rendering
 f9785c8 Add MCP, hooks, permissions, sessions, config, context, agent and webfetch
 ad8376b Pass abort signal to OpenAI API for instant request cancellation
 e7a0169 Fix Ctrl+C/Escape not working during query
 82eeadd Fix Ctrl+C during query execution
-cf56ef9 Add Escape key to interrupt ongoing requests
 ```
 
 ## 关键决策

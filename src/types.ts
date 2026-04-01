@@ -4,6 +4,10 @@ export interface ToolInput {
   [key: string]: unknown;
 }
 
+export type EngineChunk =
+  | { type: "text"; content: string }
+  | { type: "tool"; content: string };
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -13,6 +17,8 @@ export interface ToolDefinition {
     required?: string[];
   };
   execute(input: ToolInput, abortSignal?: AbortSignal): Promise<string>;
+  /** Optional streaming execution — yields chunks in real-time instead of buffering */
+  executeStreaming?(input: ToolInput, abortSignal?: AbortSignal): AsyncGenerator<EngineChunk, string>;
   permissionLevel?: "safe" | "write" | "execute";  // default: "execute"
 }
 

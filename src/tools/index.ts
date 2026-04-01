@@ -7,7 +7,9 @@ import { EditTool } from "./edit.js";
 import { GlobTool } from "./glob.js";
 import { GrepTool } from "./grep.js";
 import { WebFetchTool } from "./webfetch.js";
+import { WebSearchTool } from "./websearch.js";
 import { AgentTool } from "./agent.js";
+import { AskUserQuestionTool } from "./askuser.js";
 import { TaskCreateTool, TaskUpdateTool, TaskListTool } from "./task.js";
 import { loadSkills, executeSkill, getSkillsSummary, type Skill } from "../skills.js";
 import { initMcp } from "../mcp.js";
@@ -21,7 +23,9 @@ export const ALL_TOOLS: ToolDefinition[] = [
   GlobTool,
   GrepTool,
   WebFetchTool,
+  WebSearchTool,
   AgentTool,
+  AskUserQuestionTool,
   TaskCreateTool,
   TaskUpdateTool,
   TaskListTool,

@@ -86,11 +86,11 @@ function scanSkillsDir(
 
 export function loadSkills(cwd: string = process.cwd()): Skill[] {
   // User-level skills (lower priority)
-  const userDir = path.join(os.homedir(), ".mini-claude-code", "skills");
+  const userDir = path.join(os.homedir(), ".mcc", "skills");
   const userSkills = scanSkillsDir(userDir, "user");
 
   // Project-level skills (higher priority, overrides user-level)
-  const projectDir = path.join(cwd, ".mini-claude-code", "skills");
+  const projectDir = path.join(cwd, ".mcc", "skills");
   const projectSkills = scanSkillsDir(projectDir, "project");
 
   // Merge: project overrides user

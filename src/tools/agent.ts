@@ -1,7 +1,32 @@
-import type { ToolDefinition } from "../types.js";
+import type { ToolDefinition, EngineChunk } from "../types.js";
 import { QueryEngine, type EngineOptions } from "../engine.js";
 import { getConfig } from "../config.js";
 import { loadContext } from "../context.js";
+import chalk from "chalk";
+
+function buildEngineOpts(): EngineOptions {
+  const config = getConfig();
+  const context = loadContext();
+  return {
+    provider: config.provider,
+    model: config.model || undefined,
+    maxTokens: config.maxTokens,
+    baseURL: config.baseURL || undefined,
+    apiKey: config.apiKey,
+    contextContent: context.combinedContent || undefined,
+  };
+}
+
+function finalizeResult(fullOutput: string, description: string, toolsUsed: number): string {
+  const result = fullOutput.trim();
+  if (!result) {
+    return `Agent completed task "${description}" but produced no text output. Tools used: ${toolsUsed}`;
+  }
+  if (result.length > 30000) {
+    return result.slice(0, 30000) + `\n\n... (truncated, ${result.length} total chars)`;
+  }
+  return result;
+}
 
 export const AgentTool: ToolDefinition = {
   name: "Agent",
@@ -24,60 +49,53 @@ export const AgentTool: ToolDefinition = {
     },
     required: ["prompt"],
   },
-  async execute(input) {
+
+  // Non-streaming fallback: collects all streaming output then returns
+  async execute(input, signal?) {
     const prompt = input.prompt as string;
     const description = (input.description as string) || "sub-agent task";
+    if (!prompt) return "Error: prompt is required";
 
-    if (!prompt) {
-      return "Error: prompt is required";
-    }
-
-    const config = getConfig();
-    const context = loadContext();
-
-    // Create a sub-agent engine with same config
-    const engineOpts: EngineOptions = {
-      provider: config.provider,
-      model: config.model || undefined,
-      maxTokens: config.maxTokens,
-      baseURL: config.baseURL || undefined,
-      apiKey: config.apiKey,
-      contextContent: context.combinedContent || undefined,
-    };
-
-    const subEngine = new QueryEngine(engineOpts);
-
-    // Collect all output from the sub-agent
+    const subEngine = new QueryEngine(buildEngineOpts());
     let fullOutput = "";
-    const toolsUsed: string[] = [];
+    let toolCount = 0;
 
     try {
-      for await (const chunk of subEngine.query(prompt)) {
+      for await (const chunk of subEngine.query(prompt, signal)) {
+        if (chunk.type === "text") fullOutput += chunk.content;
+        else if (chunk.type === "tool") toolCount++;
+      }
+    } catch (err: any) {
+      return `Error: Sub-agent failed: ${err.message}`;
+    }
+
+    return finalizeResult(fullOutput, description, toolCount);
+  },
+
+  // Streaming execution: yields sub-agent chunks in real-time
+  async *executeStreaming(input, signal?): AsyncGenerator<EngineChunk, string> {
+    const prompt = input.prompt as string;
+    const description = (input.description as string) || "sub-agent task";
+    if (!prompt) return "Error: prompt is required";
+
+    const subEngine = new QueryEngine(buildEngineOpts());
+    let fullOutput = "";
+    let toolCount = 0;
+
+    try {
+      for await (const chunk of subEngine.query(prompt, signal)) {
         if (chunk.type === "text") {
           fullOutput += chunk.content;
+          yield { type: "tool", content: chalk.dim("  │ ") + chunk.content };
         } else if (chunk.type === "tool") {
-          // Track tool usage for summary
-          toolsUsed.push(chunk.content.trim());
+          toolCount++;
+          yield { type: "tool", content: "  " + chunk.content };
         }
       }
     } catch (err: any) {
       return `Error: Sub-agent failed: ${err.message}`;
     }
 
-    // Build result summary
-    const result = fullOutput.trim();
-    if (!result) {
-      return `Agent completed task "${description}" but produced no text output. Tools used: ${toolsUsed.length}`;
-    }
-
-    // Truncate if too long
-    if (result.length > 30000) {
-      return (
-        result.slice(0, 30000) +
-        `\n\n... (truncated, ${result.length} total chars)`
-      );
-    }
-
-    return result;
+    return finalizeResult(fullOutput, description, toolCount);
   },
 };

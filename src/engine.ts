@@ -9,9 +9,8 @@ import { checkPermission } from "./permissions.js";
 import { getConfig } from "./config.js";
 import { runHooks } from "./hooks.js";
 
-export type EngineChunk =
-  | { type: "text"; content: string }
-  | { type: "tool"; content: string };
+import type { EngineChunk } from "./types.js";
+export type { EngineChunk };
 
 // Provider presets
 const PROVIDERS: Record<string, { baseURL: string; defaultModel: string; contextWindow: number }> = {
@@ -38,7 +37,7 @@ const PROVIDERS: Record<string, { baseURL: string; defaultModel: string; context
 };
 
 function buildSystemPrompt(skillsSummary?: string, contextContent?: string): string {
-  let prompt = `You are a helpful AI coding assistant running in the user's terminal. You help with software engineering tasks including writing code, debugging, explaining code, running commands, and managing files.
+  let prompt = `You are Mini Claude Code, a helpful AI coding assistant running in the user's terminal. When asked who you are, always identify yourself as "Mini Claude Code". You help with software engineering tasks including writing code, debugging, explaining code, running commands, and managing files.
 
 Environment:
 - Working directory: ${process.cwd()}
@@ -80,6 +79,7 @@ export class QueryEngine {
   private skillsSummary: string;
   private contextContent: string;
   private contextWindow: number;
+  private injectedMessages: string[] = [];
 
   constructor(options: EngineOptions = {}) {
     const provider = options.provider || "minimax";
@@ -106,6 +106,16 @@ export class QueryEngine {
     return this.model;
   }
 
+  /** Switch model at runtime */
+  setModel(model: string) {
+    this.model = model;
+  }
+
+  /** Inject a user message into the ongoing conversation (mid-query) */
+  injectUserMessage(message: string) {
+    this.injectedMessages.push(message);
+  }
+
   /** Estimate total tokens in conversation history */
   estimateHistoryTokens(): number {
     let chars = 0;
@@ -124,6 +134,18 @@ export class QueryEngine {
 
     while (true) {
       if (signal?.aborted) break;
+
+      // Flush injected user messages into conversation
+      if (this.injectedMessages.length > 0) {
+        for (const msg of this.injectedMessages) {
+          this.messages.push({ role: "user", content: msg });
+          yield {
+            type: "tool",
+            content: chalk.cyan(`  ↳ User: ${msg.length > 80 ? msg.slice(0, 80) + "…" : msg}\n`),
+          };
+        }
+        this.injectedMessages.length = 0;
+      }
 
       // Auto-compact when approaching context window limit
       const estimatedTokens = this.estimateHistoryTokens();
@@ -218,16 +240,30 @@ export class QueryEngine {
         content: assistantContent || null,
       };
       if (toolCalls.length > 0) {
-        (assistantMsg as any).tool_calls = toolCalls.map((tc) => ({
-          id: tc.id,
-          type: "function" as const,
-          function: { name: tc.function.name, arguments: tc.function.arguments },
-        }));
+        // Sanitize tool call arguments: ensure valid JSON to prevent API 400 errors
+        (assistantMsg as any).tool_calls = toolCalls.map((tc) => {
+          let args = tc.function.arguments;
+          try {
+            // Re-serialize to guarantee valid JSON
+            args = JSON.stringify(JSON.parse(args));
+          } catch {
+            // If arguments are not valid JSON, replace with empty object
+            args = "{}";
+          }
+          return {
+            id: tc.id,
+            type: "function" as const,
+            function: { name: tc.function.name, arguments: args },
+          };
+        });
       }
       this.messages.push(assistantMsg);
 
-      // No tool calls → done
-      if (toolCalls.length === 0) break;
+      // No tool calls → done (unless there are injected messages to process)
+      if (toolCalls.length === 0) {
+        if (this.injectedMessages.length === 0) break;
+        continue;
+      }
       if (signal?.aborted) break;
 
       // Execute each tool
@@ -287,9 +323,21 @@ export class QueryEngine {
 
         if (!tool) {
           result = `Error: Unknown tool '${toolName}'`;
+        } else if (tool.executeStreaming) {
+          try {
+            const gen = tool.executeStreaming(parsedInput, signal);
+            let iterResult = await gen.next();
+            while (!iterResult.done) {
+              yield iterResult.value;
+              iterResult = await gen.next();
+            }
+            result = iterResult.value;
+          } catch (err: any) {
+            result = `Error executing ${toolName}: ${err.message}`;
+          }
         } else {
           try {
-            result = await tool.execute(parsedInput);
+            result = await tool.execute(parsedInput, signal);
           } catch (err: any) {
             result = `Error executing ${toolName}: ${err.message}`;
           }
@@ -426,6 +474,10 @@ function formatToolInput(
       return `${input.skill}${input.args ? ` ${input.args}` : ""}`;
     case "webfetch":
       return `${input.url}`;
+    case "websearch":
+      return `"${input.query}"`;
+    case "askuserquestion":
+      return `"${((input.question as string) || "").slice(0, 60)}"`;
     case "agent":
       return input.description
         ? `${input.description}`
@@ -500,6 +552,10 @@ function formatToolResult(toolName: string, result: string): string {
     case "webfetch":
       if (lines.length === 0) return "(empty)";
       return `${lines.length} lines fetched`;
+    case "websearch":
+      return `${lines.length} lines`;
+    case "askuserquestion":
+      return truncLine(lines[0] || "(no response)");
     case "agent":
       if (lines.length === 0) return "(no output)";
       return `${lines.length} lines from sub-agent`;

@@ -5,6 +5,8 @@
 
 import * as readline from "readline";
 import { execSync } from "node:child_process";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import os from "node:os";
 import chalk from "chalk";
 import { QueryEngine, type EngineOptions } from "./engine.js";
@@ -75,6 +77,7 @@ ${chalk.bold("REPL Commands:")}
   /hooks      List loaded hooks
   /mcp        List MCP servers and tools
   /tasks      List all tasks
+  /model      Switch model at runtime
   /help       Show help
   /exit       Exit
 `);
@@ -208,6 +211,24 @@ ${chalk.bold("REPL Commands:")}
   // REPL mode
   printBanner(engine, skills, context, mcpToolCount);
 
+  // Load input history from file
+  const historyDir = join(os.homedir(), ".mcc");
+  const historyFile = join(historyDir, "history");
+  let inputHistory: string[] = [];
+  try {
+    if (existsSync(historyFile)) {
+      inputHistory = readFileSync(historyFile, "utf-8").trim().split("\n").filter(Boolean).reverse();
+    }
+  } catch { /* ignore */ }
+
+  function appendHistory(line: string) {
+    if (!line.trim()) return;
+    try {
+      if (!existsSync(historyDir)) mkdirSync(historyDir, { recursive: true });
+      writeFileSync(historyFile, line + "\n", { flag: "a" });
+    } catch { /* ignore */ }
+  }
+
   // Command menu items with descriptions
   const cmdEntries: { cmd: string; desc: string }[] = [
     { cmd: "/help", desc: "Show help" },
@@ -223,6 +244,8 @@ ${chalk.bold("REPL Commands:")}
     { cmd: "/mcp", desc: "List MCP servers and tools" },
     { cmd: "/permissions", desc: "Show permission rules" },
     { cmd: "/tasks", desc: "List all tasks" },
+    { cmd: "/model", desc: "Switch model at runtime" },
+    { cmd: "/queue", desc: "Show queued inputs" },
     { cmd: "/exit", desc: "Exit" },
     ...skills.map((s) => ({ cmd: "/" + s.name, desc: s.description || "" })),
   ];
@@ -232,6 +255,8 @@ ${chalk.bold("REPL Commands:")}
     output: process.stdout,
     prompt: "\n" + chalk.blue("\u276f "),
     terminal: true,
+    history: inputHistory,
+    historySize: 500,
   });
 
   // ── Paste detection state ──
@@ -297,6 +322,7 @@ ${chalk.bold("REPL Commands:")}
   // ── Dropdown menu state ──
   let menuFiltered: typeof cmdEntries = [];
   let menuIdx = 0;
+  let menuScroll = 0; // first visible index in scroll window
   let menuLines = 0; // number of rendered menu lines on screen
 
   function clearMenu() {
@@ -314,12 +340,26 @@ ${chalk.bold("REPL Commands:")}
     if (menuFiltered.length === 0) return;
 
     const maxShow = Math.min(menuFiltered.length, 8);
+    // Adjust scroll window so menuIdx is always visible
+    if (menuFiltered.length > maxShow) {
+      if (menuIdx >= menuScroll + maxShow) {
+        menuScroll = menuIdx - maxShow + 1;
+      }
+      if (menuIdx < menuScroll) {
+        menuScroll = menuIdx;
+      }
+      menuScroll = Math.max(0, Math.min(menuScroll, menuFiltered.length - maxShow));
+    } else {
+      menuScroll = 0;
+    }
+    const scrollEnd = menuScroll + maxShow;
+    const totalLines = maxShow + (menuFiltered.length > maxShow ? 1 : 0);
     // Save cursor BEFORE making scroll room (\n resets column to 0)
     process.stdout.write("\x1b7"); // save cursor at input position (row + column)
-    process.stdout.write("\n".repeat(maxShow)); // ensure scroll room
+    process.stdout.write("\n".repeat(totalLines)); // ensure scroll room
     process.stdout.write("\x1b8"); // restore to original position (correct column)
     process.stdout.write("\x1b7"); // re-save for final restore after drawing
-    for (let i = 0; i < maxShow; i++) {
+    for (let i = menuScroll; i < scrollEnd; i++) {
       const { cmd, desc } = menuFiltered[i];
       process.stdout.write("\n\x1b[2K");
       if (i === menuIdx) {
@@ -329,11 +369,12 @@ ${chalk.bold("REPL Commands:")}
       }
     }
     if (menuFiltered.length > maxShow) {
-      process.stdout.write(`\n\x1b[2K  \x1b[90m\u2026 +${menuFiltered.length - maxShow} more\x1b[39m`);
-      menuLines = maxShow + 1;
-    } else {
-      menuLines = maxShow;
+      const above = menuScroll;
+      const below = menuFiltered.length - scrollEnd;
+      const hint = above > 0 && below > 0 ? `↑${above} ↓${below}` : above > 0 ? `↑${above}` : `↓${below}`;
+      process.stdout.write(`\n\x1b[2K  \x1b[90m… ${hint} more\x1b[39m`);
     }
+    menuLines = totalLines;
     process.stdout.write("\x1b8"); // restore cursor
   }
 
@@ -347,6 +388,7 @@ ${chalk.bold("REPL Commands:")}
     const prefix = line.toLowerCase();
     menuFiltered = cmdEntries.filter((e) => e.cmd.startsWith(prefix));
     menuIdx = Math.min(menuIdx, Math.max(0, menuFiltered.length - 1));
+    menuScroll = 0;
     renderMenu();
   }
 
@@ -423,14 +465,35 @@ ${chalk.bold("REPL Commands:")}
   rl.prompt();
 
   let busy = false;
+  const inputQueue: string[] = [];
 
-  rl.on("line", async (line) => {
-    // Menu may have left rendered lines — ensure cleanup
-    clearMenu();
-    menuFiltered = [];
+  // Immediate commands: execute even when busy (sync, no API call)
+  const IMMEDIATE_COMMANDS = new Set([
+    "/help", "/clear", "/cost", "/exit", "/quit",
+    "/status", "/diff", "/skills", "/hooks", "/mcp",
+    "/permissions", "/tasks", "/model", "/sessions", "/resume", "/queue",
+  ]);
 
-    if (busy) return;
+  function drainQueue() {
+    if (inputQueue.length > 0) {
+      const next = inputQueue.shift()!;
+      const remaining = inputQueue.length;
+      writeAbove(rl,
+        chalk.cyan(`▸ Executing queued input`) +
+          (remaining > 0 ? chalk.dim(` (${remaining} more pending)`) : "")
+      );
+      processInput(next).catch((err) => {
+        writeAbove(rl, chalk.red(`Queue error: ${err.message}`));
+        busy = false;
+        drainQueue();
+      });
+    } else {
+      rl.setPrompt(IDLE_PROMPT);
+      rl.prompt();
+    }
+  }
 
+  async function processInput(line: string) {
     // Expand pasted text indicators back to real content
     let input = line.trim();
     let wasPaste = false;
@@ -466,6 +529,9 @@ ${chalk.bold("REPL Commands:")}
       return;
     }
 
+    // Save to persistent history
+    appendHistory(input);
+
     if (input.startsWith("/")) {
       // Async command: /compact (requires API call for summarization)
       if (input === "/compact") {
@@ -486,7 +552,7 @@ ${chalk.bold("REPL Commands:")}
           }
           busy = false;
         }
-        rl.prompt();
+        drainQueue();
         return;
       }
 
@@ -514,7 +580,7 @@ ${chalk.bold("REPL Commands:")}
       }
 
       // Built-in commands (sync, no API call)
-      if (handleBuiltinCommand(input, engine, rl, skills, persistSession)) {
+      if (handleBuiltinCommand(input, engine, rl, skills, persistSession, inputQueue)) {
         rl.prompt();
         return;
       }
@@ -530,10 +596,10 @@ ${chalk.bold("REPL Commands:")}
         const expanded = executeSkill(skill, argsStr);
         console.log(chalk.cyan(`> /${skill.name}`) + (argsStr ? chalk.dim(` ${argsStr}`) : ""));
         busy = true;
-        await runQuery(engine, expanded);
+        await runQuery(engine, expanded, rl, inputQueue);
         persistSession();
         busy = false;
-        rl.prompt();
+        drainQueue();
         return;
       }
 
@@ -543,10 +609,53 @@ ${chalk.bold("REPL Commands:")}
     }
 
     busy = true;
-    await runQuery(engine, input);
+    await runQuery(engine, input, rl, inputQueue);
     persistSession();
     busy = false;
-    rl.prompt();
+    drainQueue();
+  }
+
+  rl.on("line", async (line) => {
+    // Menu may have left rendered lines — ensure cleanup
+    clearMenu();
+    menuFiltered = [];
+
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (!busy) rl.prompt();
+      return;
+    }
+
+    if (!busy) {
+      await processInput(line);
+      return;
+    }
+
+    // === Busy: classify input ===
+
+    if (trimmed.startsWith("/")) {
+      const cmdWord = trimmed.split(/\s+/)[0].toLowerCase();
+
+      // Immediate commands: execute right away
+      if (IMMEDIATE_COMMANDS.has(cmdWord)) {
+        if (cmdWord === "/clear" && inputQueue.length > 0) {
+          writeAbove(rl, chalk.dim(`Cleared ${inputQueue.length} queued input(s).`));
+          inputQueue.length = 0;
+        }
+        handleBuiltinCommand(trimmed, engine, rl, skills, persistSession, inputQueue);
+        return;
+      }
+
+      // Slash commands / skills: queue for later
+      inputQueue.push(line);
+      writeAbove(rl, chalk.dim(`  ⎿ Queued (${inputQueue.length} pending)`));
+      return;
+    }
+
+    // Plain text while busy: inject into current conversation
+    appendHistory(trimmed);
+    engine.injectUserMessage(trimmed);
+    writeAbove(rl, chalk.dim(`  ⎿ Injected into current conversation`));
   });
 
   rl.on("close", () => {
@@ -562,6 +671,10 @@ ${chalk.bold("REPL Commands:")}
       (rl as any).cursor = 0;
       clearMenu();
       menuFiltered = [];
+      if (inputQueue.length > 0) {
+        console.log(chalk.dim(`Cleared ${inputQueue.length} queued input(s).`));
+        inputQueue.length = 0;
+      }
       process.stdout.write("\n");
       rl.prompt();
     } else {
@@ -574,11 +687,29 @@ ${chalk.bold("REPL Commands:")}
 
 // Thinking spinner — animated indicator while waiting for model response
 const SPINNER_FRAMES = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"];
+const IDLE_PROMPT = "\n" + chalk.blue("\u276f "); // ❯
 
-function createSpinner() {
+/**
+ * Write content above the readline prompt.
+ * Clears the current prompt line, writes output, then redraws prompt + user input.
+ */
+function writeAbove(rl: readline.Interface, text: string) {
+  // Move to column 0 and clear the prompt line
+  process.stdout.write("\r\x1b[K");
+  // Write content
+  process.stdout.write(text);
+  // Ensure trailing newline so prompt appears on a fresh line
+  if (text.length > 0 && !text.endsWith("\n")) {
+    process.stdout.write("\n");
+  }
+  // Redraw prompt + current user input
+  (rl as any)._refreshLine();
+}
+
+/** Fallback spinner for one-shot mode (no readline) — writes directly to stdout */
+function createFallbackSpinner() {
   let frame = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
-
   return {
     start() {
       if (timer) return;
@@ -593,34 +724,89 @@ function createSpinner() {
       if (!timer) return;
       clearInterval(timer);
       timer = null;
-      process.stdout.write("\x1b[1D \x1b[1D"); // erase spinner character
+      process.stdout.write("\x1b[1D \x1b[1D");
     },
   };
 }
 
-async function runQuery(engine: QueryEngine, input: string) {
+function createSpinner(rl: readline.Interface) {
+  let frame = 0;
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  function updatePrompt() {
+    rl.setPrompt(chalk.cyan(SPINNER_FRAMES[frame]) + " " + chalk.blue("\u276f "));
+    (rl as any)._refreshLine();
+  }
+
+  return {
+    start() {
+      if (timer) return;
+      frame = 0;
+      updatePrompt();
+      timer = setInterval(() => {
+        frame = (frame + 1) % SPINNER_FRAMES.length;
+        updatePrompt();
+      }, 80);
+    },
+    stop() {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = null;
+    },
+  };
+}
+
+async function runQuery(engine: QueryEngine, input: string, rl?: readline.Interface, inputQueue?: string[]) {
   let textBuffer = "";
-  const spinner = createSpinner();
+  // In one-shot mode (no rl), write directly to stdout; in REPL mode, write above readline
+  const write = rl
+    ? (text: string) => writeAbove(rl, text)
+    : (text: string) => {
+        process.stdout.write(text);
+        if (text.length > 0 && !text.endsWith("\n")) process.stdout.write("\n");
+      };
+  const spinner = rl ? createSpinner(rl) : createFallbackSpinner();
   const abortController = new AbortController();
 
   // Listen for Escape or Ctrl+C to abort
   const onKeypress = (_str: string, key: any) => {
     if (key?.name === "escape" || (key?.ctrl && key?.name === "c")) {
       abortController.abort();
+      if (inputQueue && inputQueue.length > 0) {
+        write(chalk.dim(`  Cleared ${inputQueue.length} queued input(s).`));
+        inputQueue.length = 0;
+      }
     }
   };
   process.stdin.on("keypress", onKeypress);
 
-  function flushText() {
+  function flushText(final = false) {
     if (!textBuffer) return;
-    const rendered = renderMarkdown(textBuffer.trim()).replace(/\n{3,}/g, "\n\n").trimEnd();
-    process.stdout.write(rendered + "\n");
-    textBuffer = "";
+
+    let toRender = textBuffer;
+    let remainder = "";
+
+    if (!final) {
+      // When flushing mid-stream (before tool output), avoid splitting
+      // incomplete markdown across renders. Find the last complete paragraph
+      // boundary (double newline) and keep the rest for the next flush.
+      const lastParagraph = toRender.lastIndexOf("\n\n");
+      if (lastParagraph > 0) {
+        remainder = toRender.slice(lastParagraph + 2);
+        toRender = toRender.slice(0, lastParagraph);
+      }
+    }
+
+    const rendered = renderMarkdown(toRender.trim()).replace(/\n{3,}/g, "\n\n").trimEnd();
+    write(rendered);
+    textBuffer = remainder;
   }
 
   function cleanup() {
     spinner.stop();
     process.stdin.removeListener("keypress", onKeypress);
+    // Restore idle prompt
+    if (rl) rl.setPrompt(IDLE_PROMPT);
   }
 
   spinner.start();
@@ -634,27 +820,27 @@ async function runQuery(engine: QueryEngine, input: string) {
       } else {
         // Flush buffered text as markdown before showing tool output
         flushText();
-        process.stdout.write(chunk.content);
+        write(chunk.content.replace(/\n$/, "")); // tool output (strip trailing newline, write adds one)
         // Restart spinner while waiting for next API response after tool execution
         spinner.start();
       }
     }
     cleanup();
-    flushText();
+    flushText(true);
     if (abortController.signal.aborted) {
-      process.stdout.write(chalk.dim("\n(interrupted)\n"));
+      write(chalk.dim("(interrupted)"));
     }
   } catch (err: any) {
     cleanup();
-    flushText();
+    flushText(true);
     if (abortController.signal.aborted) {
-      process.stdout.write(chalk.dim("\n(interrupted)\n"));
+      write(chalk.dim("(interrupted)"));
     } else if (err.status === 401) {
-      console.error(chalk.red("\nAuthentication failed. Check your API key."));
+      write(chalk.red("Authentication failed. Check your API key."));
     } else if (err.status === 429) {
-      console.error(chalk.red("\nRate limited. Please wait and try again."));
+      write(chalk.red("Rate limited. Please wait and try again."));
     } else {
-      console.error(chalk.red(`\nError: ${err.message}`));
+      write(chalk.red(`Error: ${err.message}`));
     }
   }
 }
@@ -664,7 +850,8 @@ function handleBuiltinCommand(
   engine: QueryEngine,
   rl: readline.Interface,
   skills: Skill[],
-  persistSession: () => void
+  persistSession: () => void,
+  inputQueue?: string[]
 ): boolean {
   const cmd = input.split(/\s+/)[0].toLowerCase();
 
@@ -677,6 +864,10 @@ function handleBuiltinCommand(
 
     case "/clear":
       engine.clearHistory();
+      if (inputQueue && inputQueue.length > 0) {
+        console.log(chalk.dim(`Cleared ${inputQueue.length} queued input(s).`));
+        inputQueue.length = 0;
+      }
       console.log(chalk.green("Conversation cleared."));
       return true;
 
@@ -700,7 +891,7 @@ function handleBuiltinCommand(
       }
       console.log(
         chalk.dim(
-          `\nSkill directories:\n  Project: .mini-claude-code/skills/\n  User:    ~/.mini-claude-code/skills/`
+          `\nSkill directories:\n  Project: .mcc/skills/\n  User:    ~/.mcc/skills/`
         )
       );
       return true;
@@ -833,6 +1024,32 @@ function handleBuiltinCommand(
       return true;
     }
 
+    case "/model": {
+      const modelArg = input.slice("/model".length).trim();
+      if (!modelArg) {
+        console.log(chalk.bold(`\nCurrent model: ${engine.modelName}`));
+        console.log(chalk.dim("Usage: /model <model-name>"));
+        console.log(chalk.dim("Example: /model gpt-4o-mini"));
+      } else {
+        engine.setModel(modelArg);
+        console.log(chalk.green(`Model switched to: ${modelArg}`));
+      }
+      return true;
+    }
+
+    case "/queue":
+      if (!inputQueue || inputQueue.length === 0) {
+        console.log(chalk.dim("Queue is empty."));
+      } else {
+        console.log(chalk.bold(`\nQueued inputs (${inputQueue.length}):`));
+        for (let i = 0; i < inputQueue.length; i++) {
+          const preview = inputQueue[i].trim().slice(0, 60);
+          console.log(`  ${i + 1}. ${preview}${inputQueue[i].trim().length > 60 ? "…" : ""}`);
+        }
+        console.log(chalk.dim("\nEscape/Ctrl+C during execution to clear."));
+      }
+      return true;
+
     case "/help":
       console.log(`
 ${chalk.bold("Commands:")}
@@ -848,6 +1065,8 @@ ${chalk.bold("Commands:")}
   /mcp          List MCP servers and tools
   /permissions  Show permission rules
   /tasks        List all tasks
+  /model        Switch model at runtime
+  /queue        Show queued inputs
   /exit         Exit
   /help         Show this help
 ${skills.length > 0 ? `\n${chalk.bold("Skills:")} ${skills.map((s) => "/" + s.name).join(", ")}` : ""}
