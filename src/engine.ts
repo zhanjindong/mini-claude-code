@@ -42,7 +42,7 @@ function buildSystemPrompt(skillsSummary?: string, contextContent?: string): str
 Environment:
 - Working directory: ${process.cwd()}
 - Platform: ${process.platform}
-- Shell: bash
+- Shell: ${process.platform === "win32" ? "cmd.exe" : "bash"}
 
 Guidelines:
 - Be concise and direct

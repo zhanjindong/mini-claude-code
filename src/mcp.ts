@@ -65,6 +65,7 @@ class McpConnection {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ...(config.env || {}) },
       cwd: config.cwd || process.cwd(),
+      shell: process.platform === "win32",
     });
 
     this.process.stdout!.on("data", (data: Buffer) => {

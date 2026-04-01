@@ -126,7 +126,8 @@ export const GrepTool: ToolDefinition = {
 
 function hasCommand(cmd: string): boolean {
   try {
-    execSync(`which ${cmd}`, { encoding: "utf-8", stdio: "pipe" });
+    const check = process.platform === "win32" ? `where ${cmd}` : `which ${cmd}`;
+    execSync(check, { encoding: "utf-8", stdio: "pipe" });
     return true;
   } catch {
     return false;

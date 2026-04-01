@@ -1,6 +1,9 @@
 import { execSync, spawn } from "child_process";
 import type { ToolDefinition } from "../types.js";
 
+const IS_WINDOWS = process.platform === "win32";
+const DEFAULT_SHELL = IS_WINDOWS ? "cmd.exe" : "/bin/bash";
+
 // Background task storage
 const backgroundTasks = new Map<number, { command: string; output: string; done: boolean; exitCode: number | null }>();
 let nextBgId = 1;
@@ -56,7 +59,7 @@ export const BashTool: ToolDefinition = {
       backgroundTasks.set(bgId, task);
 
       const child = spawn(command, {
-        shell: "/bin/bash",
+        shell: DEFAULT_SHELL,
         stdio: ["pipe", "pipe", "pipe"],
       });
 
@@ -79,7 +82,7 @@ export const BashTool: ToolDefinition = {
         encoding: "utf-8",
         timeout,
         maxBuffer: 10 * 1024 * 1024,
-        shell: "/bin/bash",
+        shell: DEFAULT_SHELL,
         stdio: ["pipe", "pipe", "pipe"],
       });
       const output = result.trim() || "(no output)";
