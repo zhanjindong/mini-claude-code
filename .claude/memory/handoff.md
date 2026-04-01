@@ -1,7 +1,7 @@
 # 工作交接
 
-> 最后更新: 2026-04-01 20:39
-> 更新者: Jindong Zhan
+> 最后更新: 2026-04-01 23:20
+> 更新者: jdzhan
 > 分支: main
 
 ## 当前状态
@@ -10,21 +10,15 @@ Phase 1 技术方案设计完成，等待 develop agent 实现。DESIGN.md 和 T
 
 ## 本次改动
 - `.claude/memory/handoff.md`
-- `llm-proxy/DESIGN.md`
-- `llm-proxy/TODO.md`
-- `package-lock.json`
-- `src/engine.ts`
-- `src/mcp.ts`
-- `src/tools/bash.ts`
-- `src/tools/grep.ts`
+- `src/index.ts`
 
 ## 最近提交
 ```
+d40c115 feat: 支持Windows平台
 40527c5 fix(websearch): switch from DuckDuckGo to Bing for China network compatibility
 89e7fcd fix(ui): move spinner above prompt and harden abort/exit handling
 0c5f81d style(ui): remove space between tool icon and tool name
 b85a116 feat(ui): add input queue, mid-query injection, and write-above-readline
-8b77075 Update README with full feature table and add tasks, diff rendering
 ```
 
 ## 关键决策

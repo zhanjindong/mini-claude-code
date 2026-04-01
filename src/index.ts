@@ -475,19 +475,28 @@ ${chalk.bold("REPL Commands:")}
   ]);
 
   function drainQueue() {
-    if (inputQueue.length > 0) {
-      const next = inputQueue.shift()!;
-      const remaining = inputQueue.length;
-      writeAbove(rl,
-        chalk.cyan(`▸ Executing queued input`) +
-          (remaining > 0 ? chalk.dim(` (${remaining} more pending)`) : "")
-      );
-      processInput(next).catch((err) => {
-        writeAbove(rl, chalk.red(`Queue error: ${err.message}`));
-        busy = false;
-        drainQueue();
-      });
-    } else {
+    try {
+      if (inputQueue.length > 0) {
+        const next = inputQueue.shift()!;
+        const remaining = inputQueue.length;
+        writeAbove(rl,
+          chalk.cyan(`▸ Executing queued input`) +
+            (remaining > 0 ? chalk.dim(` (${remaining} more pending)`) : "")
+        );
+        processInput(next).catch((err) => {
+          try {
+            writeAbove(rl, chalk.red(`Queue error: ${err.message}`));
+          } catch { /* prevent unhandled rejection from writeAbove inside catch */ }
+          busy = false;
+          drainQueue();
+        });
+      } else {
+        rl.setPrompt(IDLE_PROMPT);
+        rl.prompt();
+      }
+    } catch (err: any) {
+      console.error(chalk.red(`\nQueue drain error: ${err.message}`));
+      busy = false;
       rl.setPrompt(IDLE_PROMPT);
       rl.prompt();
     }
@@ -510,23 +519,25 @@ ${chalk.bold("REPL Commands:")}
       });
     }
 
-    // Show expanded paste content preview
-    if (wasPaste && input) {
-      const previewLines = input.split("\n");
-      const maxPreview = 4;
-      console.log(chalk.dim("  ⎿ Pasted content:"));
-      for (let i = 0; i < Math.min(previewLines.length, maxPreview); i++) {
-        const pl = previewLines[i].length > 100 ? previewLines[i].slice(0, 100) + "…" : previewLines[i];
-        console.log(chalk.dim(`    ${pl}`));
-      }
-      if (previewLines.length > maxPreview) {
-        console.log(chalk.dim(`    … +${previewLines.length - maxPreview} more lines`));
-      }
-    }
-
     if (!input) {
       rl.prompt();
       return;
+    }
+
+    // Re-render user input with highlighted background (like Claude Code)
+    {
+      const inputLines = input.split("\n");
+      // Move up to overwrite the readline-echoed line (or paste indicator)
+      readline.moveCursor(process.stdout, 0, -1);
+      process.stdout.write("\r\x1b[K");
+      const cols = process.stdout.columns || 80;
+      const promptPrefix = "\u276f "; // ❯
+      const bg = chalk.bgGray;
+      process.stdout.write(chalk.blue(promptPrefix) + bg(" " + inputLines[0] + " ") + "\n");
+      for (let i = 1; i < inputLines.length; i++) {
+        const pl = inputLines[i].length > cols - 4 ? inputLines[i].slice(0, cols - 7) + "…" : inputLines[i];
+        process.stdout.write("  " + bg(" " + pl + " ") + "\n");
+      }
     }
 
     // Save to persistent history
@@ -616,46 +627,52 @@ ${chalk.bold("REPL Commands:")}
   }
 
   rl.on("line", async (line) => {
-    // Menu may have left rendered lines — ensure cleanup
-    clearMenu();
-    menuFiltered = [];
+    try {
+      // Menu may have left rendered lines — ensure cleanup
+      clearMenu();
+      menuFiltered = [];
 
-    const trimmed = line.trim();
-    if (!trimmed) {
-      if (!busy) rl.prompt();
-      return;
-    }
-
-    if (!busy) {
-      await processInput(line);
-      return;
-    }
-
-    // === Busy: classify input ===
-
-    if (trimmed.startsWith("/")) {
-      const cmdWord = trimmed.split(/\s+/)[0].toLowerCase();
-
-      // Immediate commands: execute right away
-      if (IMMEDIATE_COMMANDS.has(cmdWord)) {
-        if (cmdWord === "/clear" && inputQueue.length > 0) {
-          writeAbove(rl, chalk.dim(`Cleared ${inputQueue.length} queued input(s).`));
-          inputQueue.length = 0;
-        }
-        handleBuiltinCommand(trimmed, engine, rl, skills, persistSession, inputQueue);
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (!busy) rl.prompt();
         return;
       }
 
-      // Slash commands / skills: queue for later
-      inputQueue.push(line);
-      writeAbove(rl, chalk.dim(`  ⎿ Queued (${inputQueue.length} pending)`));
-      return;
-    }
+      if (!busy) {
+        await processInput(line);
+        return;
+      }
 
-    // Plain text while busy: inject into current conversation
-    appendHistory(trimmed);
-    engine.injectUserMessage(trimmed);
-    writeAbove(rl, chalk.dim(`  ⎿ Injected into current conversation`));
+      // === Busy: classify input ===
+
+      if (trimmed.startsWith("/")) {
+        const cmdWord = trimmed.split(/\s+/)[0].toLowerCase();
+
+        // Immediate commands: execute right away
+        if (IMMEDIATE_COMMANDS.has(cmdWord)) {
+          if (cmdWord === "/clear" && inputQueue.length > 0) {
+            writeAbove(rl, chalk.dim(`Cleared ${inputQueue.length} queued input(s).`));
+            inputQueue.length = 0;
+          }
+          handleBuiltinCommand(trimmed, engine, rl, skills, persistSession, inputQueue);
+          return;
+        }
+
+        // Slash commands / skills: queue for later
+        inputQueue.push(line);
+        writeAbove(rl, chalk.dim(`  ⎿ Queued (${inputQueue.length} pending)`));
+        return;
+      }
+
+      // Plain text while busy: inject into current conversation
+      appendHistory(trimmed);
+      engine.injectUserMessage(trimmed);
+      writeAbove(rl, chalk.dim(`  ⎿ Injected into current conversation`));
+    } catch (err: any) {
+      console.error(chalk.red(`\nUnexpected error: ${err.message}`));
+      busy = false;
+      rl.prompt();
+    }
   });
 
   rl.on("close", () => {
@@ -780,17 +797,31 @@ async function runQuery(engine: QueryEngine, input: string, rl?: readline.Interf
   const abortController = new AbortController();
 
   // Listen for Escape or Ctrl+C to abort
-  const onKeypress = (_str: string, key: any) => {
-    // Only treat a standalone ESC (\x1b) as abort — not escape sequences
-    // from IME input or bracketed paste (\x1b[200~ etc.)
-    const isRealEscape = key?.name === "escape" && key?.sequence === "\x1b";
-    if (isRealEscape || (key?.ctrl && key?.name === "c")) {
-      abortController.abort();
-      if (inputQueue && inputQueue.length > 0) {
-        write(chalk.dim(`  Cleared ${inputQueue.length} queued input(s).`));
-        inputQueue.length = 0;
-      }
+  let escapeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const doAbort = () => {
+    abortController.abort();
+    if (inputQueue && inputQueue.length > 0) {
+      write(chalk.dim(`  Cleared ${inputQueue.length} queued input(s).`));
+      inputQueue.length = 0;
     }
+  };
+
+  const onKeypress = (_str: string, key: any) => {
+    // Ctrl+C: immediate abort
+    if (key?.ctrl && key?.name === "c") {
+      if (escapeTimer) { clearTimeout(escapeTimer); escapeTimer = null; }
+      doAbort();
+      return;
+    }
+    // Standalone Escape: debounce 50ms to avoid IME escape sequences
+    if (key?.name === "escape" && key?.sequence === "\x1b") {
+      if (escapeTimer) clearTimeout(escapeTimer);
+      escapeTimer = setTimeout(() => { escapeTimer = null; doAbort(); }, 50);
+      return;
+    }
+    // Any other keypress within 50ms cancels Escape (IME sequence)
+    if (escapeTimer) { clearTimeout(escapeTimer); escapeTimer = null; }
   };
   process.stdin.on("keypress", onKeypress);
 
@@ -818,6 +849,7 @@ async function runQuery(engine: QueryEngine, input: string, rl?: readline.Interf
 
   function cleanup() {
     spinner.stop();
+    if (escapeTimer) { clearTimeout(escapeTimer); escapeTimer = null; }
     process.stdin.removeListener("keypress", onKeypress);
     // Restore idle prompt
     if (rl) rl.setPrompt(IDLE_PROMPT);
@@ -1117,6 +1149,15 @@ ${chalk.dim(`cwd: ${cwd}`)}${skills.length > 0 ? `\n${chalk.dim(`Skills: ${skill
 ${chalk.dim("Type /help for commands, Ctrl+C to exit")}
 `);
 }
+
+// Prevent silent process crash from unhandled errors
+process.on("unhandledRejection", (reason: any) => {
+  console.error(chalk.red(`\nUnhandled rejection: ${reason?.message || reason}`));
+});
+process.on("uncaughtException", (err: Error) => {
+  console.error(chalk.red(`\nUncaught exception: ${err.message}`));
+  // Don't exit — allow the REPL to continue
+});
 
 main().catch((err) => {
   console.error(chalk.red(`[exit:fatal] Fatal: ${err.message}`));
