@@ -316,7 +316,7 @@ export class QueryEngine {
         }
 
         // Show tool invocation header
-        yield { type: "tool", content: `${chalk.cyan("⚡")} ${chalk.bold(toolName)}${inputSummary ? chalk.dim(` ${inputSummary}`) : ""}\n` };
+        yield { type: "tool", content: `${chalk.cyan("⚡")}${chalk.bold(toolName)}${inputSummary ? chalk.dim(` ${inputSummary}`) : ""}\n` };
 
         // Execute
         let result: string;
