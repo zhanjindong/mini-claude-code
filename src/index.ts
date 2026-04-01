@@ -524,20 +524,19 @@ ${chalk.bold("REPL Commands:")}
       return;
     }
 
-    // Re-render user input with highlighted background (like Claude Code)
+    // Re-render user input with highlighted background (full-width, like Claude Code)
+    // Keep bg color ON through \x1b[K and \n so the terminal associates the
+    // background with the entire line — enables correct reflow on resize.
     {
       const inputLines = input.split("\n");
-      // Move up to overwrite the readline-echoed line (or paste indicator)
       readline.moveCursor(process.stdout, 0, -1);
       process.stdout.write("\r\x1b[K");
-      const cols = process.stdout.columns || 80;
-      const promptPrefix = "\u276f "; // ❯
-      const bg = chalk.bgGray;
-      process.stdout.write(chalk.blue(promptPrefix) + bg(" " + inputLines[0] + " ") + "\n");
+      const BG = "\x1b[100m"; // bright black (gray) background
+      process.stdout.write(BG + "\u276f " + inputLines[0] + "\x1b[K\n");
       for (let i = 1; i < inputLines.length; i++) {
-        const pl = inputLines[i].length > cols - 4 ? inputLines[i].slice(0, cols - 7) + "…" : inputLines[i];
-        process.stdout.write("  " + bg(" " + pl + " ") + "\n");
+        process.stdout.write("  " + inputLines[i] + "\x1b[K\n");
       }
+      process.stdout.write("\x1b[0m"); // reset all attributes after input block
     }
 
     // Save to persistent history
