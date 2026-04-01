@@ -413,8 +413,8 @@ ${chalk.bold("REPL Commands:")}
     if (event === "data") {
       const raw = emitArgs[0];
       const str = typeof raw === "string" ? raw : (Buffer.isBuffer(raw) ? raw.toString() : String(raw));
-      // A real paste: multi-byte chunk containing newline characters
-      if (str.length > 1 && /[\n\r]/.test(str)) {
+      // A real paste: multi-byte chunk containing newline characters or bracketed paste
+      if (str.length > 1 && (/[\n\r]/.test(str) || str.includes("\x1b[200~"))) {
         handlePaste(str);
         return true; // swallow — don't let keypress module split it
       }
@@ -660,12 +660,12 @@ ${chalk.bold("REPL Commands:")}
 
   rl.on("close", () => {
     persistSession();
-    console.log(chalk.dim("\nGoodbye!"));
+    console.log(chalk.dim("\n[exit:close] Goodbye!"));
     process.exit(0);
   });
 
   rl.on("SIGINT", () => {
-    // Ctrl+C: if line has content, clear it; otherwise exit
+    // Ctrl+C: if line has content, clear it; if busy, just let abort handle it; otherwise exit
     if ((rl as any).line) {
       (rl as any).line = "";
       (rl as any).cursor = 0;
@@ -677,9 +677,12 @@ ${chalk.bold("REPL Commands:")}
       }
       process.stdout.write("\n");
       rl.prompt();
+    } else if (busy) {
+      // During a query, abort is already handled by the keypress handler in runQuery.
+      // Don't exit — just let the query finish aborting and return to REPL.
     } else {
       persistSession();
-      console.log(chalk.dim("\nGoodbye!"));
+      console.log(chalk.dim("\n[exit:sigint] Goodbye!"));
       process.exit(0);
     }
   });
@@ -694,16 +697,24 @@ const IDLE_PROMPT = "\n" + chalk.blue("\u276f "); // ❯
  * Clears the current prompt line, writes output, then redraws prompt + user input.
  */
 function writeAbove(rl: readline.Interface, text: string) {
-  // Move to column 0 and clear the prompt line
-  process.stdout.write("\r\x1b[K");
+  const rli = rl as any;
+  // Move up to start of prompt area (handles multi-line prompts like spinner)
+  const prevRows = rli.prevRows || 0;
+  if (prevRows > 0) {
+    readline.moveCursor(process.stdout, 0, -prevRows);
+  }
+  // Clear from prompt start to end of screen
+  process.stdout.write("\r\x1b[J");
   // Write content
   process.stdout.write(text);
   // Ensure trailing newline so prompt appears on a fresh line
   if (text.length > 0 && !text.endsWith("\n")) {
     process.stdout.write("\n");
   }
+  // Reset prevRows so _refreshLine draws from current cursor position
+  rli.prevRows = 0;
   // Redraw prompt + current user input
-  (rl as any)._refreshLine();
+  rli._refreshLine();
 }
 
 /** Fallback spinner for one-shot mode (no readline) — writes directly to stdout */
@@ -734,7 +745,7 @@ function createSpinner(rl: readline.Interface) {
   let timer: ReturnType<typeof setInterval> | null = null;
 
   function updatePrompt() {
-    rl.setPrompt(chalk.cyan(SPINNER_FRAMES[frame]) + " " + chalk.blue("\u276f "));
+    rl.setPrompt("  " + chalk.cyan(SPINNER_FRAMES[frame]) + "\n" + chalk.blue("\u276f "));
     (rl as any)._refreshLine();
   }
 
@@ -770,7 +781,10 @@ async function runQuery(engine: QueryEngine, input: string, rl?: readline.Interf
 
   // Listen for Escape or Ctrl+C to abort
   const onKeypress = (_str: string, key: any) => {
-    if (key?.name === "escape" || (key?.ctrl && key?.name === "c")) {
+    // Only treat a standalone ESC (\x1b) as abort — not escape sequences
+    // from IME input or bracketed paste (\x1b[200~ etc.)
+    const isRealEscape = key?.name === "escape" && key?.sequence === "\x1b";
+    if (isRealEscape || (key?.ctrl && key?.name === "c")) {
       abortController.abort();
       if (inputQueue && inputQueue.length > 0) {
         write(chalk.dim(`  Cleared ${inputQueue.length} queued input(s).`));
@@ -1105,6 +1119,7 @@ ${chalk.dim("Type /help for commands, Ctrl+C to exit")}
 }
 
 main().catch((err) => {
-  console.error(chalk.red(`Fatal: ${err.message}`));
+  console.error(chalk.red(`[exit:fatal] Fatal: ${err.message}`));
+  console.error(err.stack);
   process.exit(1);
 });

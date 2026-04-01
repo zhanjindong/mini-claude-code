@@ -1,6 +1,6 @@
 # 工作交接
 
-> 最后更新: 2026-04-01 18:40
+> 最后更新: 2026-04-01 20:09
 > 更新者: Jindong Zhan
 > 分支: main
 
@@ -10,18 +10,19 @@ Phase 1 技术方案设计完成，等待 develop agent 实现。DESIGN.md 和 T
 
 ## 本次改动
 - `.claude/memory/handoff.md`
-- `"\347\232\204\345\267\246\350\276\271\357\274\214\346\230\276\347\244\272\345\234\250\344\270\212\351\235\242\350\276\223\345\207\272\345\206\205\345\256\271\345\214\272\345\237\237\357\274\233"`
+- `llm-proxy/DESIGN.md`
+- `llm-proxy/TODO.md`
 - `package-lock.json`
-- `SPEC.md`
-- `src/engine.ts`
+- `src/index.ts`
+- `TODO.md`
 
 ## 最近提交
 ```
+0c5f81d style(ui): remove space between tool icon and tool name
 b85a116 feat(ui): add input queue, mid-query injection, and write-above-readline
 8b77075 Update README with full feature table and add tasks, diff rendering
 f9785c8 Add MCP, hooks, permissions, sessions, config, context, agent and webfetch
 ad8376b Pass abort signal to OpenAI API for instant request cancellation
-e7a0169 Fix Ctrl+C/Escape not working during query
 ```
 
 ## 关键决策
