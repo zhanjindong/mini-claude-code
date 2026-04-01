@@ -2,7 +2,7 @@ import type { ToolDefinition } from "../types.js";
 
 /**
  * WebSearch - search the web and return summarized results.
- * Uses DuckDuckGo HTML search (no API key required).
+ * Uses Bing HTML search (no API key required).
  */
 export const WebSearchTool: ToolDefinition = {
   name: "WebSearch",
@@ -33,14 +33,16 @@ export const WebSearchTool: ToolDefinition = {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
 
-      // Use DuckDuckGo HTML search
+      // Use Bing HTML search
       const encodedQuery = encodeURIComponent(query);
-      const url = `https://html.duckduckgo.com/html/?q=${encodedQuery}`;
+      const url = `https://cn.bing.com/search?q=${encodedQuery}&count=${maxResults}`;
 
       const response = await fetch(url, {
         headers: {
-          "User-Agent": "mini-claude-code/0.1.0",
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
           Accept: "text/html",
+          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         },
         signal: controller.signal,
       });
@@ -53,8 +55,8 @@ export const WebSearchTool: ToolDefinition = {
 
       const html = await response.text();
 
-      // Parse DuckDuckGo HTML results
-      const results = parseDDGResults(html, maxResults);
+      // Parse Bing HTML results
+      const results = parseBingResults(html, maxResults);
 
       if (results.length === 0) {
         return `No results found for: ${query}`;
@@ -80,38 +82,44 @@ interface SearchResult {
   snippet: string;
 }
 
-function parseDDGResults(html: string, maxResults: number): SearchResult[] {
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+function stripHtmlTags(text: string): string {
+  return text.replace(/<[^>]+>/g, "");
+}
+
+function parseBingResults(html: string, maxResults: number): SearchResult[] {
   const results: SearchResult[] = [];
 
-  // Match result blocks: <a class="result__a" href="...">title</a> and <a class="result__snippet">snippet</a>
-  const resultBlocks = html.split(/class="result\s/g).slice(1);
+  // Split by Bing's result block class
+  const blocks = html.split(/class="b_algo"/).slice(1);
 
-  for (const block of resultBlocks) {
+  for (const block of blocks) {
     if (results.length >= maxResults) break;
 
-    // Extract URL from result__a href
-    const urlMatch = block.match(/class="result__a"[^>]*href="([^"]+)"/);
-    // Extract title from result__a content
-    const titleMatch = block.match(/class="result__a"[^>]*>([^<]+(?:<[^>]+>[^<]*)*)<\/a>/);
-    // Extract snippet
-    const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
+    // Extract URL and title from <h2><a href="...">Title</a></h2>
+    const linkMatch = block.match(/<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
+    if (!linkMatch) continue;
 
-    if (urlMatch) {
-      let url = urlMatch[1];
-      // DuckDuckGo wraps URLs in redirect - extract actual URL
-      const uddgMatch = url.match(/uddg=([^&]+)/);
-      if (uddgMatch) url = decodeURIComponent(uddgMatch[1]);
+    const url = linkMatch[1];
+    const title = decodeHtmlEntities(stripHtmlTags(linkMatch[2])).trim();
 
-      const title = titleMatch
-        ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
-        : "(no title)";
-      const snippet = snippetMatch
-        ? snippetMatch[1].replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim()
-        : "";
+    // Extract snippet from <p class="b_lineclamp...">...</p>
+    const snippetMatch = block.match(/class="b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/);
+    const snippet = snippetMatch
+      ? decodeHtmlEntities(stripHtmlTags(snippetMatch[1])).trim()
+      : "";
 
-      if (title && url) {
-        results.push({ title, url, snippet });
-      }
+    if (title && url) {
+      results.push({ title, url, snippet });
     }
   }
 

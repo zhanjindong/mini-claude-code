@@ -1,6 +1,6 @@
 # 工作交接
 
-> 最后更新: 2026-04-01 20:09
+> 最后更新: 2026-04-01 20:29
 > 更新者: Jindong Zhan
 > 分支: main
 
@@ -13,16 +13,16 @@ Phase 1 技术方案设计完成，等待 develop agent 实现。DESIGN.md 和 T
 - `llm-proxy/DESIGN.md`
 - `llm-proxy/TODO.md`
 - `package-lock.json`
-- `src/index.ts`
+- `src/tools/websearch.ts`
 - `TODO.md`
 
 ## 最近提交
 ```
+89e7fcd fix(ui): move spinner above prompt and harden abort/exit handling
 0c5f81d style(ui): remove space between tool icon and tool name
 b85a116 feat(ui): add input queue, mid-query injection, and write-above-readline
 8b77075 Update README with full feature table and add tasks, diff rendering
 f9785c8 Add MCP, hooks, permissions, sessions, config, context, agent and webfetch
-ad8376b Pass abort signal to OpenAI API for instant request cancellation
 ```
 
 ## 关键决策
