@@ -1,6 +1,6 @@
 # 工作交接
 
-> 最后更新: 2026-04-01 23:37
+> 最后更新: 2026-04-01 23:40
 > 更新者: jdzhan
 > 分支: main
 
@@ -10,15 +10,14 @@ Phase 1 技术方案设计完成，等待 develop agent 实现。DESIGN.md 和 T
 
 ## 本次改动
 - `.claude/memory/handoff.md`
-- `src/index.ts`
 
 ## 最近提交
 ```
+4f75fe2 style(ui): fix user input background to fill full width on terminal resize
 b540d8c fix(ui): prevent silent crash on mid-query input and highlight user input
 d40c115 feat: 支持Windows平台
 40527c5 fix(websearch): switch from DuckDuckGo to Bing for China network compatibility
 89e7fcd fix(ui): move spinner above prompt and harden abort/exit handling
-0c5f81d style(ui): remove space between tool icon and tool name
 ```
 
 ## 关键决策
