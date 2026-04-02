@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import os from "node:os";
 import chalk from "chalk";
-import { QueryEngine, type EngineOptions } from "./engine.js";
+import { QueryEngine, PROVIDERS, type EngineOptions } from "./engine.js";
 import { initSkills, registerMcpTools } from "./tools/index.js";
 import { executeSkill, type Skill } from "./skills.js";
 import { getMcpServers, closeMcp } from "./mcp.js";
@@ -30,6 +30,143 @@ import {
 
 const VERSION = "0.1.0";
 
+/**
+ * Read a single keypress in raw mode, temporarily suspending other stdin listeners.
+ * Returns the raw character string.
+ */
+function readKeypress(): Promise<string> {
+  return new Promise((resolve) => {
+    const wasRaw = process.stdin.isRaw;
+    const savedData = process.stdin.rawListeners("data");
+    const savedKeypress = process.stdin.rawListeners("keypress");
+    process.stdin.removeAllListeners("data");
+    process.stdin.removeAllListeners("keypress");
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.once("data", (buf: Buffer) => {
+      process.stdin.setRawMode(wasRaw ?? false);
+      for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
+      for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
+      resolve(buf.toString());
+    });
+  });
+}
+
+/**
+ * Read a line of text from the user via a temporary readline question.
+ * Hides input if `hidden` is true (for API keys).
+ */
+function readLine(rl: readline.Interface, prompt: string, hidden = false): Promise<string> {
+  return new Promise((resolve) => {
+    // Pause the main readline so we can control input
+    const savedData = process.stdin.rawListeners("data");
+    const savedKeypress = process.stdin.rawListeners("keypress");
+    process.stdin.removeAllListeners("data");
+    process.stdin.removeAllListeners("keypress");
+
+    if (hidden) {
+      // Manual hidden input: read raw chars, echo *, handle backspace/enter
+      process.stdout.write(prompt);
+      let buf = "";
+      const wasRaw = process.stdin.isRaw;
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+
+      const onData = (data: Buffer) => {
+        const ch = data.toString();
+        if (ch === "\r" || ch === "\n") {
+          process.stdin.removeListener("data", onData);
+          process.stdin.setRawMode(wasRaw ?? false);
+          for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
+          for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
+          process.stdout.write("\n");
+          resolve(buf);
+        } else if (ch === "\x03") {
+          // Ctrl+C
+          process.stdin.removeListener("data", onData);
+          process.stdin.setRawMode(wasRaw ?? false);
+          for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
+          for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
+          process.stdout.write("\n");
+          resolve("");
+        } else if (ch === "\x7f" || ch === "\b") {
+          // Backspace
+          if (buf.length > 0) {
+            buf = buf.slice(0, -1);
+            process.stdout.write("\b \b");
+          }
+        } else {
+          buf += ch;
+          process.stdout.write("*");
+        }
+      };
+      process.stdin.on("data", onData);
+    } else {
+      // Normal visible input
+      const tmpRl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      tmpRl.question(prompt, (answer) => {
+        tmpRl.close();
+        for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
+        for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
+        resolve(answer.trim());
+      });
+    }
+  });
+}
+
+/**
+ * Interactive /login flow: select provider, enter API key, save config, reconfigure engine.
+ */
+async function handleLogin(rl: readline.Interface, engine: QueryEngine): Promise<void> {
+  const providerNames = Object.keys(PROVIDERS);
+
+  console.log(chalk.bold("\nSelect Provider:"));
+  providerNames.forEach((name, i) => {
+    const p = PROVIDERS[name];
+    const current = name === engine.providerName ? chalk.green(" (current)") : "";
+    console.log(`  ${chalk.cyan(String(i + 1))}. ${chalk.bold(name)}${current} ${chalk.dim(`— ${p.defaultModel}`)}`);
+  });
+  console.log(`  ${chalk.cyan("0")}. ${chalk.dim("Cancel")}`);
+  process.stdout.write(chalk.dim("\nEnter number: "));
+
+  const key = await readKeypress();
+  process.stdout.write(key + "\n");
+
+  // Ctrl+C or 0 to cancel
+  if (key === "\x03" || key === "0") {
+    console.log(chalk.dim("Cancelled."));
+    return;
+  }
+
+  const idx = parseInt(key, 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= providerNames.length) {
+    console.log(chalk.yellow("Invalid selection."));
+    return;
+  }
+
+  const selectedProvider = providerNames[idx];
+  const apiKey = await readLine(rl, chalk.dim("API Key: "), true);
+
+  if (!apiKey) {
+    console.log(chalk.dim("Cancelled."));
+    return;
+  }
+
+  // Reconfigure engine
+  engine.reconfigure({ provider: selectedProvider, apiKey });
+
+  // Save to user config
+  saveUserConfig({ provider: selectedProvider, apiKey });
+
+  // Update cached config
+  const config = getConfig();
+  config.provider = selectedProvider;
+  config.apiKey = apiKey;
+
+  console.log(chalk.green(`\nLogged in: ${chalk.bold(selectedProvider)} (${engine.modelName})`));
+}
+
 async function main() {
   const args = process.argv.slice(2);
 
@@ -45,26 +182,29 @@ ${chalk.bold("Options:")}
   --provider <name>     Provider: minimax, deepseek, openai, openrouter (default: minimax)
   --model <model>       Model name (uses provider default if omitted)
   --base-url <url>      Custom API base URL
-  --api-key <key>       API key (or set via API_KEY env var)
+  --api-key <key>       API key (or set via MCC_API_KEY env var)
   --resume              Resume most recent session for current directory
   -p, --prompt <text>   Run a single prompt and exit
   -h, --help            Show this help
 
 ${chalk.bold("Environment Variables:")}
-  API_KEY               API key for the chosen provider
+  MCC_API_KEY           API key for the chosen provider
+  OPENAI_API_KEY        Fallback API key (OpenAI compatible)
 
 ${chalk.bold("Provider Examples:")}
   # MiniMax (default)
-  API_KEY=your-minimax-key npx tsx src/index.ts
+  MCC_API_KEY=your-minimax-key npx tsx src/index.ts
 
   # DeepSeek
-  API_KEY=your-key npx tsx src/index.ts --provider deepseek
+  MCC_API_KEY=your-key npx tsx src/index.ts --provider deepseek
 
   # OpenAI
-  API_KEY=your-key npx tsx src/index.ts --provider openai
+  MCC_API_KEY=your-key npx tsx src/index.ts --provider openai
 
   # Custom provider
-  API_KEY=your-key npx tsx src/index.ts --base-url https://your-api.com/v1 --model your-model
+  MCC_API_KEY=your-key npx tsx src/index.ts --base-url https://your-api.com/v1 --model your-model
+
+  # Or use /login after startup to configure interactively
 
 ${chalk.bold("REPL Commands:")}
   /clear      Clear conversation history
@@ -78,6 +218,7 @@ ${chalk.bold("REPL Commands:")}
   /mcp        List MCP servers and tools
   /tasks      List all tasks
   /model      Switch model at runtime
+  /login      Switch provider and API key
   /help       Show help
   /exit       Exit
 `);
@@ -119,10 +260,15 @@ ${chalk.bold("REPL Commands:")}
   const config = loadConfig(configOverrides);
 
   if (!config.apiKey) {
-    console.error(chalk.red("Error: API key is required."));
-    console.error(chalk.dim("Set via: export API_KEY=your-key-here"));
-    console.error(chalk.dim("Or use:  --api-key your-key-here"));
-    process.exit(1);
+    if (oneShot) {
+      console.error(chalk.red("Error: API key is required."));
+      console.error(chalk.dim("Set via: export MCC_API_KEY=your-key-here"));
+      console.error(chalk.dim("Or use:  --api-key your-key-here"));
+      process.exit(1);
+    }
+    console.log(chalk.yellow("No API key configured."));
+    console.log(chalk.dim("Run /login to select a provider and enter your API key."));
+    console.log(chalk.dim("Or set via: export MCC_API_KEY=your-key-here\n"));
   }
 
   // Initialize permission system
@@ -245,6 +391,7 @@ ${chalk.bold("REPL Commands:")}
     { cmd: "/permissions", desc: "Show permission rules" },
     { cmd: "/tasks", desc: "List all tasks" },
     { cmd: "/model", desc: "Switch model at runtime" },
+    { cmd: "/login", desc: "Switch provider and API key" },
     { cmd: "/queue", desc: "Show queued inputs" },
     { cmd: "/exit", desc: "Exit" },
     ...skills.map((s) => ({ cmd: "/" + s.name, desc: s.description || "" })),
@@ -566,6 +713,13 @@ ${chalk.bold("REPL Commands:")}
         return;
       }
 
+      // Interactive login: select provider and enter API key
+      if (input === "/login") {
+        await handleLogin(rl, engine);
+        rl.prompt();
+        return;
+      }
+
       // Session commands
       if (input === "/resume") {
         resumeSession();
@@ -614,6 +768,12 @@ ${chalk.bold("REPL Commands:")}
       }
 
       console.log(chalk.yellow(`Unknown command: ${input}. Type /help for help.`));
+      rl.prompt();
+      return;
+    }
+
+    if (!getConfig().apiKey) {
+      console.log(chalk.yellow("No API key configured. Run /login first."));
       rl.prompt();
       return;
     }
@@ -1111,6 +1271,7 @@ ${chalk.bold("Commands:")}
   /permissions  Show permission rules
   /tasks        List all tasks
   /model        Switch model at runtime
+  /login        Switch provider and API key
   /queue        Show queued inputs
   /exit         Exit
   /help         Show this help

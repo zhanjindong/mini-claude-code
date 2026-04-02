@@ -13,7 +13,7 @@ import type { EngineChunk } from "./types.js";
 export type { EngineChunk };
 
 // Provider presets
-const PROVIDERS: Record<string, { baseURL: string; defaultModel: string; contextWindow: number }> = {
+export const PROVIDERS: Record<string, { baseURL: string; defaultModel: string; contextWindow: number }> = {
   minimax: {
     baseURL: "https://api.minimax.chat/v1",
     defaultModel: "MiniMax-M2.5",
@@ -94,7 +94,7 @@ export class QueryEngine {
     this.contextContent = options.contextContent || "";
 
     this.client = new OpenAI({
-      apiKey: options.apiKey || process.env.MCC_API_KEY || process.env.OPENAI_API_KEY,
+      apiKey: options.apiKey || process.env.MCC_API_KEY || process.env.OPENAI_API_KEY || "placeholder",
       baseURL: options.baseURL || preset?.baseURL || "https://api.openai.com/v1",
     });
 
@@ -114,6 +114,18 @@ export class QueryEngine {
   /** Switch model at runtime */
   setModel(model: string) {
     this.model = model;
+  }
+
+  /** Reconfigure provider, apiKey, model, and baseURL at runtime */
+  reconfigure(options: { provider: string; apiKey: string; model?: string; baseURL?: string }) {
+    const preset = PROVIDERS[options.provider];
+    this.providerName = options.provider;
+    this.client = new OpenAI({
+      apiKey: options.apiKey,
+      baseURL: options.baseURL || preset?.baseURL || "https://api.openai.com/v1",
+    });
+    this.model = options.model || preset?.defaultModel || "gpt-4o";
+    this.contextWindow = preset?.contextWindow || 128000;
   }
 
   /** Inject a user message into the ongoing conversation (mid-query) */

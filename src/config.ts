@@ -153,7 +153,7 @@ export function getConfig(): ResolvedConfig {
  * Creates the directory if it does not exist.
  * Merges patch into existing user config (does not overwrite unrelated fields).
  */
-export function saveUserConfig(patch: Partial<MccConfig>): void {
+export function saveUserConfig(patch: Partial<MccConfig & { apiKey?: string }>): void {
   const configDir = path.join(os.homedir(), ".claude");
   const configPath = path.join(configDir, "config.json");
 

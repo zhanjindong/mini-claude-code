@@ -2,13 +2,14 @@
 
 一个轻量级的 Claude Code 风格 CLI 工具，支持多 LLM 提供商。
 
-用 ~6700 行 TypeScript 实现了 Claude Code 的核心交互体验：流式对话、工具调用、Skills、MCP、Hooks、权限、会话管理等完整功能。
+用 ~7000 行 TypeScript 实现了 Claude Code 的核心交互体验：流式对话、工具调用、Skills、MCP、Hooks、权限、会话管理等完整功能。
 
 ## 功能一览
 
 | 类别 | 功能 | 说明 |
 |------|------|------|
-| **LLM 集成** | 多提供商支持 | MiniMax、DeepSeek、OpenAI、OpenRouter 及任何 OpenAI 兼容 API |
+| **LLM 集成** | 多提供商支持 | MiniMax、DeepSeek、OpenAI、OpenRouter、Qwen 及任何 OpenAI 兼容 API |
+| | 交互式登录 | `/login` 运行时选择 Provider 并输入 API Key，无需预设环境变量 |
 | | 流式输出 | 实时流式输出模型回复，支持 `<think>` 标签过滤 |
 | | Token 统计 | 实时跟踪 input/output token 用量（`/cost`） |
 | | 自动上下文压缩 | 对话接近上下文窗口时自动摘要压缩，也可手动 `/compact` |
@@ -39,7 +40,7 @@
 | **上下文系统** | CLAUDE.md 加载 | 自动加载用户级、父目录、项目级、项目 .claude/、local 五层配置 |
 | | 优先级合并 | 用户级 → 父目录（远→近）→ 项目级 → project-local |
 | **配置系统** | 四层合并 | defaults ← `~/.claude/config.json` ← `.claude/config.json` ← 环境变量 ← CLI 参数 |
-| | 环境变量 | `API_KEY`、`MCC_PROVIDER`、`MCC_MODEL`、`MCC_BASE_URL` |
+| | 环境变量 | `MCC_API_KEY`、`MCC_PROVIDER`、`MCC_MODEL`、`MCC_BASE_URL` |
 | **会话管理** | 自动保存 | 对话自动持久化到 `~/.claude/sessions/` |
 | | 恢复会话 | `--resume` 或 `/resume` 恢复最近会话 |
 | | 会话列表 | `/sessions` 查看历史会话 |
@@ -58,19 +59,23 @@
 # 安装依赖
 pnpm install
 
-# 运行（以 MiniMax 为例）
-API_KEY=your-key npx tsx src/index.ts
+# 方式一：直接启动，通过 /login 交互式配置
+npx tsx src/index.ts
+
+# 方式二：环境变量指定 API Key
+MCC_API_KEY=your-key npx tsx src/index.ts
 
 # 指定提供商
-API_KEY=your-key npx tsx src/index.ts --provider deepseek
-API_KEY=your-key npx tsx src/index.ts --provider openai
-API_KEY=your-key npx tsx src/index.ts --provider openrouter
+MCC_API_KEY=your-key npx tsx src/index.ts --provider deepseek
+MCC_API_KEY=your-key npx tsx src/index.ts --provider openai
+MCC_API_KEY=your-key npx tsx src/index.ts --provider openrouter
+MCC_API_KEY=your-key npx tsx src/index.ts --provider qwen
 
 # 自定义 API 地址
-API_KEY=your-key npx tsx src/index.ts --base-url https://your-api.com/v1 --model your-model
+MCC_API_KEY=your-key npx tsx src/index.ts --base-url https://your-api.com/v1 --model your-model
 
 # 单次提问模式
-API_KEY=your-key npx tsx src/index.ts "解释这个项目的结构"
+MCC_API_KEY=your-key npx tsx src/index.ts "解释这个项目的结构"
 ```
 
 ## REPL 命令
@@ -78,6 +83,8 @@ API_KEY=your-key npx tsx src/index.ts "解释这个项目的结构"
 | 命令 | 说明 |
 |------|------|
 | `/help` | 显示帮助 |
+| `/login` | 交互式选择 Provider 并输入 API Key |
+| `/model` | 运行时切换模型 |
 | `/clear` | 清空对话历史 |
 | `/compact` | 压缩对话历史（LLM 摘要） |
 | `/cost` | 查看 token 用量 |
