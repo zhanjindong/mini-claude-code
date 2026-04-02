@@ -34,6 +34,11 @@ const PROVIDERS: Record<string, { baseURL: string; defaultModel: string; context
     defaultModel: "anthropic/claude-sonnet-4",
     contextWindow: 200000,
   },
+  qwen: {
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultModel: "qwen/qwen3.6-plus-preview:free",
+    contextWindow: 131072,
+  },
 };
 
 function buildSystemPrompt(skillsSummary?: string, contextContent?: string): string {
