@@ -151,11 +151,11 @@ function applyInlineStyles(text: string): string {
 
 // --- Claude Code-style inline diff rendering ---
 
-// ANSI 256-color codes for muted diff backgrounds (matches Claude Code style)
-// Dark red bg + light red text for removed lines
-const REMOVED_BG = "\x1b[48;5;52m\x1b[38;5;210m";
-// Dark green bg + light green text for added lines
-const ADDED_BG = "\x1b[48;5;22m\x1b[38;5;157m";
+// True-color backgrounds matching Claude Code's deep muted tones
+// Deep red bg (rgb 50,15,15) + muted red text (rgb 200,130,130)
+const REMOVED_BG = "\x1b[48;2;50;15;15m\x1b[38;2;200;130;130m";
+// Deep green bg (rgb 10;35;15) + muted green text (rgb 130;200;140)
+const ADDED_BG = "\x1b[48;2;10;35;15m\x1b[38;2;130;200;140m";
 const RESET = "\x1b[0m";
 // \x1b[K = erase to end of line (extends background to terminal edge)
 
