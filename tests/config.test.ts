@@ -56,7 +56,7 @@ function withConfigFiles(map: Record<string, object>) {
 
 /** Snapshot of env vars that the tests touch, restored after each test. */
 const ENV_KEYS = [
-  "API_KEY",
+  "MCC_API_KEY",
   "OPENAI_API_KEY",
   "MCC_PROVIDER",
   "MCC_MODEL",
@@ -162,10 +162,10 @@ describe("loadConfig", () => {
     });
   });
 
-  describe("should_read_apiKey_from_API_KEY_env_var", () => {
-    it("sets apiKey when API_KEY is present", () => {
+  describe("should_read_apiKey_from_MCC_API_KEY_env_var", () => {
+    it("sets apiKey when MCC_API_KEY is present", () => {
       noConfigFiles();
-      process.env.API_KEY = "sk-test-key";
+      process.env.MCC_API_KEY = "sk-test-key";
       const cfg = loadConfig();
       expect(cfg.apiKey).toBe("sk-test-key");
     });
@@ -180,10 +180,10 @@ describe("loadConfig", () => {
     });
   });
 
-  describe("should_prefer_API_KEY_over_OPENAI_API_KEY_when_both_set", () => {
-    it("API_KEY takes precedence", () => {
+  describe("should_prefer_MCC_API_KEY_over_OPENAI_API_KEY_when_both_set", () => {
+    it("MCC_API_KEY takes precedence", () => {
       noConfigFiles();
-      process.env.API_KEY = "sk-primary";
+      process.env.MCC_API_KEY = "sk-primary";
       process.env.OPENAI_API_KEY = "sk-secondary";
       const cfg = loadConfig();
       expect(cfg.apiKey).toBe("sk-primary");

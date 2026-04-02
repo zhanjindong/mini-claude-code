@@ -61,7 +61,7 @@ function readJsonConfig(filePath: string): Partial<MccConfig> {
 function readEnvConfig(): Partial<MccConfig & { apiKey?: string }> {
   const env: Partial<MccConfig & { apiKey?: string }> = {};
 
-  const apiKey = process.env.API_KEY || process.env.OPENAI_API_KEY;
+  const apiKey = process.env.MCC_API_KEY || process.env.OPENAI_API_KEY;
   if (apiKey) {
     env.apiKey = apiKey;
   }

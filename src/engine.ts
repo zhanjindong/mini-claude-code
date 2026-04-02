@@ -94,7 +94,7 @@ export class QueryEngine {
     this.contextContent = options.contextContent || "";
 
     this.client = new OpenAI({
-      apiKey: options.apiKey || process.env.API_KEY || process.env.OPENAI_API_KEY,
+      apiKey: options.apiKey || process.env.MCC_API_KEY || process.env.OPENAI_API_KEY,
       baseURL: options.baseURL || preset?.baseURL || "https://api.openai.com/v1",
     });
 
