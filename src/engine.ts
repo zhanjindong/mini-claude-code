@@ -4,10 +4,13 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import chalk from "chalk";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { getToolByName, toOpenAITools } from "./tools/index.js";
 import { checkPermission } from "./permissions.js";
 import { getConfig } from "./config.js";
 import { runHooks, promptHookOverride } from "./hooks.js";
+import { renderEditDiff } from "./markdown.js";
 
 import type { EngineChunk } from "./types.js";
 export type { EngineChunk };
@@ -339,6 +342,18 @@ export class QueryEngine {
         // Show tool invocation header
         yield { type: "tool", content: `${chalk.cyan("⚡")}${chalk.bold(toolName)}${inputSummary ? chalk.dim(` ${inputSummary}`) : ""}\n` };
 
+        // Capture file content before edit/write for diff display
+        let preContent: string | null = null;
+        const lowerName = toolName.toLowerCase();
+        if (lowerName === "edit" || lowerName === "write") {
+          try {
+            const fp = resolve(parsedInput.file_path as string);
+            preContent = readFileSync(fp, "utf-8");
+          } catch {
+            preContent = null; // new file or unreadable
+          }
+        }
+
         // Execute
         let result: string;
 
@@ -361,6 +376,20 @@ export class QueryEngine {
             result = await tool.execute(parsedInput, signal);
           } catch (err: any) {
             result = `Error executing ${toolName}: ${err.message}`;
+          }
+        }
+
+        // Render inline diff for Edit/Write tools (only on success)
+        if ((lowerName === "edit" || lowerName === "write") && !result.startsWith("Error")) {
+          try {
+            const fp = resolve(parsedInput.file_path as string);
+            const postContent = readFileSync(fp, "utf-8");
+            const diffOutput = renderEditDiff(preContent, postContent);
+            if (diffOutput) {
+              yield { type: "tool", content: diffOutput + "\n" };
+            }
+          } catch {
+            // silently skip diff on read failure
           }
         }
 

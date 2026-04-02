@@ -148,3 +148,138 @@ function applyInlineStyles(text: string): string {
 
   return text;
 }
+
+// --- Claude Code-style inline diff rendering ---
+
+/**
+ * Compute a simple LCS-based line diff between two string arrays.
+ * Returns an array of tagged lines: "=" (context), "-" (removed), "+" (added).
+ */
+interface DiffLine {
+  tag: "=" | "-" | "+";
+  oldIdx?: number; // 1-based line number in old content
+  newIdx?: number; // 1-based line number in new content
+  text: string;
+}
+
+function computeLineDiff(oldLines: string[], newLines: string[]): DiffLine[] {
+  const m = oldLines.length;
+  const n = newLines.length;
+
+  // For large files, bail out
+  if (m > 2000 || n > 2000) return [];
+
+  // Myers-like DP for LCS
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = oldLines[i - 1] === newLines[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  // Backtrack to build diff
+  const result: DiffLine[] = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+      result.push({ tag: "=", oldIdx: i, newIdx: j, text: oldLines[i - 1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      result.push({ tag: "+", newIdx: j, text: newLines[j - 1] });
+      j--;
+    } else {
+      result.push({ tag: "-", oldIdx: i, text: oldLines[i - 1] });
+      i--;
+    }
+  }
+
+  return result.reverse();
+}
+
+/**
+ * Render an inline diff in Claude Code style with line numbers and colored backgrounds.
+ *
+ * Format:
+ *   {lineNo}  {content}       — context (dim)
+ *   {lineNo} -{content}       — removed (red bg)
+ *   {lineNo} +{content}       — added (green bg)
+ *
+ * @param oldContent File content before change (null for new files)
+ * @param newContent File content after change
+ * @param contextLines Number of context lines around each hunk (default: 3)
+ * @param maxLines Maximum output lines before truncation (default: 40)
+ */
+export function renderEditDiff(
+  oldContent: string | null,
+  newContent: string,
+  contextLines = 3,
+  maxLines = 40,
+): string {
+  const oldLines = oldContent !== null ? oldContent.split("\n") : [];
+  const newLines = newContent.split("\n");
+
+  // Large file fallback
+  if (oldLines.length > 2000 || newLines.length > 2000) {
+    return chalk.dim(`    (file too large for inline diff: ${oldLines.length} → ${newLines.length} lines)`);
+  }
+
+  const diff = computeLineDiff(oldLines, newLines);
+  if (diff.length === 0) return "";
+
+  // Find changed ranges and expand with context
+  const changed = new Set<number>();
+  diff.forEach((d, idx) => {
+    if (d.tag !== "=") {
+      for (let c = Math.max(0, idx - contextLines); c <= Math.min(diff.length - 1, idx + contextLines); c++) {
+        changed.add(c);
+      }
+    }
+  });
+
+  if (changed.size === 0) return "";
+
+  // Calculate max line number width for alignment
+  let maxNum = 1;
+  for (const d of diff) {
+    if (d.oldIdx && d.oldIdx > maxNum) maxNum = d.oldIdx;
+    if (d.newIdx && d.newIdx > maxNum) maxNum = d.newIdx;
+  }
+  const numWidth = String(maxNum).length;
+
+  const outputLines: string[] = [];
+  let lastIncluded = -1;
+
+  for (let idx = 0; idx < diff.length; idx++) {
+    if (!changed.has(idx)) continue;
+
+    // Insert separator if there's a gap
+    if (lastIncluded >= 0 && idx - lastIncluded > 1) {
+      outputLines.push(chalk.dim("    ···"));
+    }
+    lastIncluded = idx;
+
+    const d = diff[idx];
+    const pad = (n: number | undefined) => n !== undefined ? String(n).padStart(numWidth) : " ".repeat(numWidth);
+
+    if (d.tag === "=") {
+      outputLines.push(chalk.dim(`    ${pad(d.newIdx)}  ${d.text}`));
+    } else if (d.tag === "-") {
+      // Red background for removed lines
+      outputLines.push(`    \x1b[41m${pad(d.oldIdx)} -${d.text}\x1b[K\x1b[0m`);
+    } else {
+      // Green background for added lines
+      outputLines.push(`    \x1b[42;30m${pad(d.newIdx)} +${d.text}\x1b[K\x1b[0m`);
+    }
+  }
+
+  // Truncate if too many lines
+  if (outputLines.length > maxLines) {
+    const truncated = outputLines.slice(0, maxLines);
+    truncated.push(chalk.dim(`    ... +${outputLines.length - maxLines} more lines`));
+    return truncated.join("\n");
+  }
+
+  return outputLines.join("\n");
+}
