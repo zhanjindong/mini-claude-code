@@ -151,14 +151,18 @@ function applyInlineStyles(text: string): string {
 
 // --- Claude Code-style inline diff rendering ---
 
-/**
- * Compute a simple LCS-based line diff between two string arrays.
- * Returns an array of tagged lines: "=" (context), "-" (removed), "+" (added).
- */
+// ANSI 256-color codes for muted diff backgrounds (matches Claude Code style)
+// Dark red bg + light red text for removed lines
+const REMOVED_BG = "\x1b[48;5;52m\x1b[38;5;210m";
+// Dark green bg + light green text for added lines
+const ADDED_BG = "\x1b[48;5;22m\x1b[38;5;157m";
+const RESET = "\x1b[0m";
+// \x1b[K = erase to end of line (extends background to terminal edge)
+
 interface DiffLine {
   tag: "=" | "-" | "+";
-  oldIdx?: number; // 1-based line number in old content
-  newIdx?: number; // 1-based line number in new content
+  oldIdx?: number;
+  newIdx?: number;
   text: string;
 }
 
@@ -166,10 +170,9 @@ function computeLineDiff(oldLines: string[], newLines: string[]): DiffLine[] {
   const m = oldLines.length;
   const n = newLines.length;
 
-  // For large files, bail out
   if (m > 2000 || n > 2000) return [];
 
-  // Myers-like DP for LCS
+  // LCS via DP
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
@@ -179,37 +182,52 @@ function computeLineDiff(oldLines: string[], newLines: string[]): DiffLine[] {
     }
   }
 
-  // Backtrack to build diff
-  const result: DiffLine[] = [];
+  // Backtrack to build raw diff
+  const raw: DiffLine[] = [];
   let i = m, j = n;
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      result.push({ tag: "=", oldIdx: i, newIdx: j, text: oldLines[i - 1] });
+      raw.push({ tag: "=", oldIdx: i, newIdx: j, text: oldLines[i - 1] });
       i--; j--;
     } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      result.push({ tag: "+", newIdx: j, text: newLines[j - 1] });
+      raw.push({ tag: "+", newIdx: j, text: newLines[j - 1] });
       j--;
     } else {
-      result.push({ tag: "-", oldIdx: i, text: oldLines[i - 1] });
+      raw.push({ tag: "-", oldIdx: i, text: oldLines[i - 1] });
       i--;
     }
   }
+  raw.reverse();
 
-  return result.reverse();
+  // Reorder: in each group of consecutive changes, put all "-" before "+"
+  const result: DiffLine[] = [];
+  let k = 0;
+  while (k < raw.length) {
+    if (raw[k].tag === "=") {
+      result.push(raw[k]);
+      k++;
+    } else {
+      const removes: DiffLine[] = [];
+      const adds: DiffLine[] = [];
+      while (k < raw.length && raw[k].tag !== "=") {
+        if (raw[k].tag === "-") removes.push(raw[k]);
+        else adds.push(raw[k]);
+        k++;
+      }
+      result.push(...removes, ...adds);
+    }
+  }
+
+  return result;
 }
 
 /**
- * Render an inline diff in Claude Code style with line numbers and colored backgrounds.
+ * Render an inline diff in Claude Code style.
  *
- * Format:
+ * Format (matches screenshot):
  *   {lineNo}  {content}       — context (dim)
- *   {lineNo} -{content}       — removed (red bg)
- *   {lineNo} +{content}       — added (green bg)
- *
- * @param oldContent File content before change (null for new files)
- * @param newContent File content after change
- * @param contextLines Number of context lines around each hunk (default: 3)
- * @param maxLines Maximum output lines before truncation (default: 40)
+ *   {lineNo} -{content}       — removed (dark red bg, light red text)
+ *   {lineNo} +{content}       — added (dark green bg, light green text)
  */
 export function renderEditDiff(
   oldContent: string | null,
@@ -220,7 +238,6 @@ export function renderEditDiff(
   const oldLines = oldContent !== null ? oldContent.split("\n") : [];
   const newLines = newContent.split("\n");
 
-  // Large file fallback
   if (oldLines.length > 2000 || newLines.length > 2000) {
     return chalk.dim(`    (file too large for inline diff: ${oldLines.length} → ${newLines.length} lines)`);
   }
@@ -228,58 +245,59 @@ export function renderEditDiff(
   const diff = computeLineDiff(oldLines, newLines);
   if (diff.length === 0) return "";
 
-  // Find changed ranges and expand with context
-  const changed = new Set<number>();
+  // Mark indices that should be visible (changed lines + surrounding context)
+  const visible = new Set<number>();
   diff.forEach((d, idx) => {
     if (d.tag !== "=") {
       for (let c = Math.max(0, idx - contextLines); c <= Math.min(diff.length - 1, idx + contextLines); c++) {
-        changed.add(c);
+        visible.add(c);
       }
     }
   });
 
-  if (changed.size === 0) return "";
+  if (visible.size === 0) return "";
 
-  // Calculate max line number width for alignment
+  // Determine line number width for alignment
   let maxNum = 1;
   for (const d of diff) {
     if (d.oldIdx && d.oldIdx > maxNum) maxNum = d.oldIdx;
     if (d.newIdx && d.newIdx > maxNum) maxNum = d.newIdx;
   }
-  const numWidth = String(maxNum).length;
+  const w = Math.max(String(maxNum).length, 3);
 
-  const outputLines: string[] = [];
-  let lastIncluded = -1;
+  const out: string[] = [];
+  let lastIdx = -1;
 
   for (let idx = 0; idx < diff.length; idx++) {
-    if (!changed.has(idx)) continue;
+    if (!visible.has(idx)) continue;
 
-    // Insert separator if there's a gap
-    if (lastIncluded >= 0 && idx - lastIncluded > 1) {
-      outputLines.push(chalk.dim("    ···"));
+    // Hunk separator for gaps
+    if (lastIdx >= 0 && idx - lastIdx > 1) {
+      out.push(chalk.dim(" ".repeat(w + 5) + "···"));
     }
-    lastIncluded = idx;
+    lastIdx = idx;
 
     const d = diff[idx];
-    const pad = (n: number | undefined) => n !== undefined ? String(n).padStart(numWidth) : " ".repeat(numWidth);
+    const num = (n: number | undefined) =>
+      n !== undefined ? String(n).padStart(w) : " ".repeat(w);
 
     if (d.tag === "=") {
-      outputLines.push(chalk.dim(`    ${pad(d.newIdx)}  ${d.text}`));
+      // Context line: dim, two spaces before content
+      out.push(chalk.dim(`${num(d.newIdx)}  ${d.text}`));
     } else if (d.tag === "-") {
-      // Red background for removed lines
-      outputLines.push(`    \x1b[41m${pad(d.oldIdx)} -${d.text}\x1b[K\x1b[0m`);
+      // Removed line: dark red bg, extends to terminal edge
+      out.push(`${REMOVED_BG}${num(d.oldIdx)} -${d.text}\x1b[K${RESET}`);
     } else {
-      // Green background for added lines
-      outputLines.push(`    \x1b[42;30m${pad(d.newIdx)} +${d.text}\x1b[K\x1b[0m`);
+      // Added line: dark green bg, extends to terminal edge
+      out.push(`${ADDED_BG}${num(d.newIdx)} +${d.text}\x1b[K${RESET}`);
     }
   }
 
-  // Truncate if too many lines
-  if (outputLines.length > maxLines) {
-    const truncated = outputLines.slice(0, maxLines);
-    truncated.push(chalk.dim(`    ... +${outputLines.length - maxLines} more lines`));
+  if (out.length > maxLines) {
+    const truncated = out.slice(0, maxLines);
+    truncated.push(chalk.dim(`    ... +${out.length - maxLines} more lines`));
     return truncated.join("\n");
   }
 
-  return outputLines.join("\n");
+  return out.join("\n");
 }
