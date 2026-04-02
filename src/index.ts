@@ -212,7 +212,7 @@ ${chalk.bold("REPL Commands:")}
   printBanner(engine, skills, context, mcpToolCount);
 
   // Load input history from file
-  const historyDir = join(os.homedir(), ".mcc");
+  const historyDir = join(os.homedir(), ".claude");
   const historyFile = join(historyDir, "history");
   let inputHistory: string[] = [];
   try {
@@ -936,7 +936,7 @@ function handleBuiltinCommand(
       }
       console.log(
         chalk.dim(
-          `\nSkill directories:\n  Project: .mcc/skills/\n  User:    ~/.mcc/skills/`
+          `\nSkill directories:\n  Project: .claude/skills/\n  User:    ~/.claude/skills/\n  Commands: .claude/commands/\n  Agents:   .claude/agents/`
         )
       );
       return true;
@@ -954,7 +954,7 @@ function handleBuiltinCommand(
       }
       console.log(
         chalk.dim(
-          `\nHook config files:\n  Project: .mcc/hooks.json\n  User:    ~/.mcc/hooks.json`
+          `\nHook config files:\n  Project: .claude/hooks.json\n  User:    ~/.claude/hooks.json\n  Settings: .claude/settings.json`
         )
       );
       return true;
@@ -972,7 +972,7 @@ function handleBuiltinCommand(
       }
       console.log(
         chalk.dim(
-          `\nMCP config files:\n  Project: .mcc/mcp.json\n  User:    ~/.mcc/mcp.json`
+          `\nMCP config files:\n  Project: .claude/mcp.json\n  User:    ~/.claude/mcp.json`
         )
       );
       return true;
@@ -1144,7 +1144,7 @@ function printBanner(engine: QueryEngine, skills: Skill[], context: LoadedContex
   console.log(`
 ${chalk.bold.blue("Mini Claude Code")} v${VERSION}
 ${chalk.dim(`Provider: ${engine.providerName} | Model: ${engine.modelName}`)}
-${chalk.dim(`cwd: ${cwd}`)}${skills.length > 0 ? `\n${chalk.dim(`Skills: ${skills.map((s) => s.name).join(", ")}`)}` : ""}${mcpLine}${contextLine}
+${chalk.dim(`cwd: ${cwd}`)}${skills.length > 0 ? `\n${chalk.dim(`Skills: ${skills.length} loaded (type /skills to list)`)}` : ""}${mcpLine}${contextLine}
 ${chalk.dim("Type /help for commands, Ctrl+C to exit")}
 `);
 }

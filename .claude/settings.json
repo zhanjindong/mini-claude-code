@@ -53,11 +53,11 @@
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/check-skip-tests-reminder.sh" }],
         "description": "【提醒型】后端跳过测试编译时提醒"
       },
-      {
-        "matcher": "Bash(command matches '(npm install|yarn add|yarn install)')",
-        "hooks": [{ "type": "command", "command": "bash .claude/hooks/block-npm-yarn.sh" }],
-        "description": "【阻断型】前端禁止使用 npm/yarn"
-      },
+      // {
+      //   "matcher": "Bash(command matches '(npm install|yarn add|yarn install)')",
+      //   "hooks": [{ "type": "command", "command": "bash .claude/hooks/block-npm-yarn.sh" }],
+      //   "description": "【阻断型】前端禁止使用 npm/yarn"
+      // },
       {
         "matcher": "Bash(command matches 'git push.*(--force|-f).*')",
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/block-force-push.sh" }],

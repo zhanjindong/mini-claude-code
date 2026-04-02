@@ -196,22 +196,22 @@ describe("loadMcpConfig", () => {
       expect(result!.mcpServers).not.toHaveProperty("userServer");
     });
 
-    it("reads from the correct project-level path .mcc/mcp.json", () => {
+    it("reads from the correct project-level path .claude/mcp.json", () => {
       const projectConfig = {
         mcpServers: { srv: { command: "echo" } },
       };
-      withConfigFiles({ ".mcc/mcp.json": projectConfig });
+      withConfigFiles({ ".claude/mcp.json": projectConfig });
 
       const result = loadMcpConfig("/my/project");
 
       expect(result).not.toBeNull();
-      // Verify readFileSync was called with a path containing the project's .mcc dir.
+      // Verify readFileSync was called with a path containing the project's .claude dir.
       const calls = vi.mocked(fs.readFileSync).mock.calls;
       const firstCallPath = String(calls[0][0]);
-      expect(firstCallPath).toMatch(/\.mcc[/\\]mcp\.json$/);
+      expect(firstCallPath).toMatch(/\.claude[/\\]mcp\.json$/);
     });
 
-    it("reads from user-level path ~/.mcc/mcp.json when project config is absent", () => {
+    it("reads from user-level path ~/.claude/mcp.json when project config is absent", () => {
       vi.mocked(os.homedir).mockReturnValue("/custom-home");
       const userConfig = {
         mcpServers: { homeServer: { command: "node" } },

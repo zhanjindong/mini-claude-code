@@ -1,11 +1,11 @@
-// Session persistence - save/load conversation history to ~/.mcc/sessions/
+// Session persistence - save/load conversation history to ~/.claude/sessions/
 
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
-const SESSION_DIR = path.join(os.homedir(), ".mcc", "sessions");
+const SESSION_DIR = path.join(os.homedir(), ".claude", "sessions");
 
 export interface SessionMetadata {
   id: string;

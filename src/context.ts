@@ -87,6 +87,22 @@ export function collectCandidates(
     source: "project-local",
   });
 
+  // 6. Rules files from .claude/rules/ directory
+  const rulesDir = path.join(cwd, ".claude", "rules");
+  try {
+    const entries = fs.readdirSync(rulesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith(".md") && !entry.name.startsWith(".")) {
+        candidates.push({
+          filePath: path.join(rulesDir, entry.name),
+          source: "project",
+        });
+      }
+    }
+  } catch {
+    // Directory doesn't exist or is unreadable, skip
+  }
+
   return candidates;
 }
 

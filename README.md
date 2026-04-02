@@ -23,24 +23,24 @@
 | | TaskCreate/Update/List | 会话级任务跟踪，多步操作进度管理 |
 | | Skill | 模型自动调用 Skill 指令模板 |
 | **Skills 系统** | Markdown 定义 | 用 YAML frontmatter + Markdown 定义可复用指令模板 |
-| | 双级加载 | 项目级 `.mcc/skills/` + 用户级 `~/.mcc/skills/` |
+| | 双级加载 | 项目级 `.claude/skills/` + 用户级 `~/.claude/skills/` |
 | | 参数支持 | 支持 `{{ argument }}` 模板变量 |
 | | 双向调用 | 用户通过 `/skill-name` 调用，模型通过 Skill tool 自动调用 |
 | **MCP 协议** | stdio 传输 | 通过 JSON-RPC 2.0 over stdin/stdout 连接 MCP 服务器 |
 | | 自动发现 | 启动时连接配置的 MCP 服务器并自动注册其工具 |
-| | 配置加载 | 支持项目级 `.mcc/mcp.json` 和用户级 `~/.mcc/mcp.json` |
+| | 配置加载 | 支持项目级 `.claude/mcp.json` 和用户级 `~/.claude/mcp.json` |
 | **Hooks 系统** | 生命周期钩子 | `beforeToolUse`（可阻断工具执行）和 `afterToolResult` |
 | | 工具过滤 | 可按工具名精确匹配或匹配所有工具 |
 | | 环境变量注入 | 自动注入 `TOOL_NAME`、`TOOL_INPUT`、`TOOL_RESULT` |
 | **权限系统** | 分级权限 | 工具声明 safe/write/execute 权限级别 |
 | | 交互式授权 | write/execute 工具执行前提示用户 y/a/n/d 确认 |
-| | 会话级 & 持久化 | allow-always/deny-always 持久化到 `~/.mcc/config.json` |
+| | 会话级 & 持久化 | allow-always/deny-always 持久化到 `~/.claude/config.json` |
 | | 权限管理 | `/permissions` 查看、重置权限规则 |
 | **上下文系统** | CLAUDE.md 加载 | 自动加载用户级、父目录、项目级、项目 .claude/、local 五层配置 |
 | | 优先级合并 | 用户级 → 父目录（远→近）→ 项目级 → project-local |
-| **配置系统** | 四层合并 | defaults ← `~/.mcc/config.json` ← `.mcc/config.json` ← 环境变量 ← CLI 参数 |
+| **配置系统** | 四层合并 | defaults ← `~/.claude/config.json` ← `.claude/config.json` ← 环境变量 ← CLI 参数 |
 | | 环境变量 | `API_KEY`、`MCC_PROVIDER`、`MCC_MODEL`、`MCC_BASE_URL` |
-| **会话管理** | 自动保存 | 对话自动持久化到 `~/.mcc/sessions/` |
+| **会话管理** | 自动保存 | 对话自动持久化到 `~/.claude/sessions/` |
 | | 恢复会话 | `--resume` 或 `/resume` 恢复最近会话 |
 | | 会话列表 | `/sessions` 查看历史会话 |
 | **交互体验** | REPL 交互 | 完整的命令行交互界面 |
@@ -99,13 +99,13 @@ Skills 是用 Markdown + YAML frontmatter 定义的可复用指令模板。
 ### 目录结构
 
 ```
-.mcc/skills/     # 项目级（优先级高）
+.claude/skills/     # 项目级（优先级高）
   commit/
     SKILL.md
   hello/
     SKILL.md
 
-~/.mcc/skills/   # 用户级
+~/.claude/skills/   # 用户级
   my-skill/
     SKILL.md
 ```

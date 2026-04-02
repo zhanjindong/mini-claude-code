@@ -84,18 +84,67 @@ function scanSkillsDir(
   return skills;
 }
 
+/**
+ * Scan a commands/ or agents/ directory for .md files.
+ * Each .md file is parsed as a skill (name from frontmatter or filename).
+ */
+function scanCommandsDir(
+  dir: string,
+  source: "project" | "user"
+): Map<string, Skill> {
+  const skills = new Map<string, Skill>();
+  if (!fs.existsSync(dir)) return skills;
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return skills;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".md") || entry.name.startsWith(".")) continue;
+    const filePath = path.join(dir, entry.name);
+    const fallbackName = entry.name.replace(/\.md$/, "");
+    const skill = parseSkillFile(filePath, fallbackName, source);
+    if (skill) skills.set(skill.name, skill);
+  }
+  return skills;
+}
+
 export function loadSkills(cwd: string = process.cwd()): Skill[] {
-  // User-level skills (lower priority)
-  const userDir = path.join(os.homedir(), ".mcc", "skills");
-  const userSkills = scanSkillsDir(userDir, "user");
+  // User-level skills (lowest priority)
+  const userSkillsDir = path.join(os.homedir(), ".claude", "skills");
+  const userSkills = scanSkillsDir(userSkillsDir, "user");
 
-  // Project-level skills (higher priority, overrides user-level)
-  const projectDir = path.join(cwd, ".mcc", "skills");
-  const projectSkills = scanSkillsDir(projectDir, "project");
+  // User-level commands
+  const userCommandsDir = path.join(os.homedir(), ".claude", "commands");
+  const userCommands = scanCommandsDir(userCommandsDir, "user");
 
-  // Merge: project overrides user
+  // Project-level skills
+  const projectSkillsDir = path.join(cwd, ".claude", "skills");
+  const projectSkills = scanSkillsDir(projectSkillsDir, "project");
+
+  // Project-level commands (highest priority)
+  const projectCommandsDir = path.join(cwd, ".claude", "commands");
+  const projectCommands = scanCommandsDir(projectCommandsDir, "project");
+
+  // Project-level agents
+  const projectAgentsDir = path.join(cwd, ".claude", "agents");
+  const projectAgents = scanCommandsDir(projectAgentsDir, "project");
+
+  // Merge: project overrides user, commands override skills
   const merged = new Map(userSkills);
+  for (const [name, skill] of userCommands) {
+    merged.set(name, skill);
+  }
   for (const [name, skill] of projectSkills) {
+    merged.set(name, skill);
+  }
+  for (const [name, skill] of projectAgents) {
+    merged.set(name, skill);
+  }
+  for (const [name, skill] of projectCommands) {
     merged.set(name, skill);
   }
 

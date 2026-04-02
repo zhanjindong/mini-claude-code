@@ -194,13 +194,13 @@ const connections: Map<string, McpConnection> = new Map();
 const mcpTools: ToolDefinition[] = [];
 
 /**
- * Load MCP config from .mcc/mcp.json or ~/.mcc/mcp.json
+ * Load MCP config from .claude/mcp.json or ~/.claude/mcp.json
  */
 export function loadMcpConfig(cwd?: string): McpConfig | null {
   const resolvedCwd = cwd ?? process.cwd();
   const candidates = [
-    path.join(resolvedCwd, ".mcc", "mcp.json"),
-    path.join(os.homedir(), ".mcc", "mcp.json"),
+    path.join(resolvedCwd, ".claude", "mcp.json"),
+    path.join(os.homedir(), ".claude", "mcp.json"),
   ];
 
   for (const filePath of candidates) {

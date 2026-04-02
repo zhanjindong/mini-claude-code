@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI前沿周报 | 2026年3月8日</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&family=Noto+Serif+SC:wght@400;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --ink: #1a1a2e;
+      --paper: #f8f6f1;
+      --accent: #c0392b;
+      --accent2: #2c3e50;
+      --gold: #d4a959;
+      --muted: #7f8c8d;
+      --card-bg: #ffffff;
+      --tag-drama: #e74c3c;
+      --tag-tech: #2980b9;
+      --tag-edu: #27ae60;
+      --tag-policy: #8e44ad;
+      --tag-trend: #e67e22;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Noto Sans SC', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.8;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      color: white;
+      padding: 48px 24px 40px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(ellipse at 30% 50%, rgba(212, 169, 89, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 30%, rgba(192, 57, 43, 0.06) 0%, transparent 50%);
+      animation: shimmer 8s ease-in-out infinite alternate;
+    }
+
+    @keyframes shimmer {
+      0% {
+        transform: translate(0, 0);
+      }
+
+      100% {
+        transform: translate(-5%, 3%);
+      }
+    }
+
+    .header-inner {
+      position: relative;
+      z-index: 1;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .header .edition-tag {
+      display: inline-block;
+      background: var(--gold);
+      color: var(--ink);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      padding: 4px 16px;
+      border-radius: 2px;
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 42px;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 8px;
+      letter-spacing: 2px;
+    }
+
+    .header .subtitle {
+      font-size: 15px;
+      color: rgba(255, 255, 255, 0.65);
+      font-weight: 300;
+      margin-bottom: 20px;
+    }
+
+    .header .date-line {
+      font-size: 13px;
+      color: var(--gold);
+      font-weight: 500;
+      letter-spacing: 1px;
+    }
+
+    .header .purpose {
+      margin-top: 16px;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.5);
+      font-style: italic;
+    }
+
+    .quick-read {
+      max-width: 720px;
+      margin: -24px auto 0;
+      padding: 0 16px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .quick-read-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 28px 32px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+      border-left: 4px solid var(--gold);
+    }
+
+    .quick-read-card h2 {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 18px;
+      color: var(--accent2);
+      margin-bottom: 14px;
+    }
+
+    .quick-read-card ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .quick-read-card li {
+      padding: 8px 0;
+      font-size: 14px;
+      border-bottom: 1px dashed #e8e4dc;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .quick-read-card li:last-child {
+      border-bottom: none;
+    }
+
+    .quick-read-card .bullet {
+      flex-shrink: 0;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      margin-top: 9px;
+    }
+
+    .bullet-red {
+      background: var(--tag-drama);
+    }
+
+    .bullet-blue {
+      background: var(--tag-tech);
+    }
+
+    .bullet-green {
+      background: var(--tag-edu);
+    }
+
+    .bullet-purple {
+      background: var(--tag-policy);
+    }
+
+    .bullet-orange {
+      background: var(--tag-trend);
+    }
+
+    .content {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 16px 64px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 40px 0 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--ink);
+    }
+
+    .section-header .icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .icon-drama {
+      background: #fde8e8;
+    }
+
+    .icon-tech {
+      background: #e8f0fe;
+    }
+
+    .icon-edu {
+      background: #e8f8ee;
+    }
+
+    .icon-policy {
+      background: #f0e8fe;
+    }
+
+    .icon-trend {
+      background: #fef3e8;
+    }
+
+    .section-header h2 {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .section-header .section-desc {
+      font-size: 12px;
+      color: var(--muted);
+      margin-left: auto;
+      text-align: right;
+      max-width: 200px;
+      line-height: 1.5;
+    }
+
+    .news-card {
+      background: var(--card-bg);
+      border-radius: 10px;
+      padding: 24px 28px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+      transition: transform 0.2s, box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .news-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .news-card .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      padding: 2px 10px;
+      border-radius: 3px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    .tag-drama-style {
+      background: #fde8e8;
+      color: var(--tag-drama);
+    }
+
+    .tag-tech-style {
+      background: #e8f0fe;
+      color: var(--tag-tech);
+    }
+
+    .tag-edu-style {
+      background: #e8f8ee;
+      color: var(--tag-edu);
+    }
+
+    .tag-policy-style {
+      background: #f0e8fe;
+      color: var(--tag-policy);
+    }
+
+    .tag-trend-style {
+      background: #fef3e8;
+      color: var(--tag-trend);
+    }
+
+    .news-card h3 {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.5;
+      margin-bottom: 10px;
+      color: var(--ink);
+    }
+
+    .news-card .summary {
+      font-size: 14px;
+      color: #444;
+      line-height: 1.9;
+      margin-bottom: 14px;
+    }
+
+    .news-card .talk-point {
+      background: #faf8f3;
+      border-radius: 6px;
+      padding: 14px 16px;
+      border-left: 3px solid var(--gold);
+      margin-top: 12px;
+    }
+
+    .talk-point-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .talk-point p {
+      font-size: 13px;
+      color: #555;
+      line-height: 1.8;
+    }
+
+    .news-card .source {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+
+    .knowledge-box {
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      color: white;
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin: 32px 0;
+    }
+
+    .knowledge-box h3 {
+      font-family: 'Noto Serif SC', serif;
+      font-size: 18px;
+      color: var(--gold);
+      margin-bottom: 14px;
+    }
+
+    .knowledge-box p {
+      font-size: 13px;
+      line-height: 2;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .knowledge-box .term {
+      color: var(--gold);
+      font-weight: 600;
+    }
+
+    .footer {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 16px;
+      text-align: center;
+      border-top: 1px solid #e0dcd4;
+    }
+
+    .footer p {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    .fancy-divider {
+      text-align: center;
+      margin: 36px 0;
+      color: var(--muted);
+      font-size: 14px;
+      letter-spacing: 8px;
+    }
+
+    @media (max-width: 600px) {
+      .header h1 {
+        font-size: 28px;
+      }
+
+      .section-header .section-desc {
+        display: none;
+      }
+
+      .news-card {
+        padding: 18px 20px;
+      }
+
+      .quick-read-card {
+        padding: 20px 22px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header class="header">
+    <div class="header-inner">
+      <span class="edition-tag">每周精选 · Weekly Briefing</span>
+      <h1>AI 前沿周报</h1>
+      <p class="subtitle">为教育行业销售精英定制 · 让你的每一次客户对话都有料</p>
+      <p class="date-line">📅 2026年3月8日 · 星期日 · 第2期</p>
+      <p class="purpose">本周报整理AI领域最值得谈论的新闻，帮助销售团队与教育局长、校长等客户建立技术话题上的信任感</p>
+    </div>
+  </header>
+
+  <div class="quick-read">
+    <div class="quick-read-card">
+      <h2>⚡ 30秒速读 · 本周必知</h2>
+      <ul>
+        <li>
+          <span class="bullet bullet-red"></span>
+          <span><strong>Block裁员4000人拥抱AI：</strong>CEO Jack Dorsey宣称"小团队+AI能超越大团队"，AI替代人力的浪潮从概念变成现实</span>
+        </li>
+        <li>
+          <span class="bullet bullet-blue"></span>
+          <span><strong>OpenAI发布GPT-5.4：</strong>推理、编码、计算机操作三合一，被称为"最强全能选手"，同周拿下1100亿美元融资</span>
+        </li>
+        <li>
+          <span class="bullet bullet-green"></span>
+          <span><strong>美国参议员提出AI教育法案：</strong>要求NSF研究AI课堂工具，重点服务K-12和低收入地区学生</span>
+        </li>
+        <li>
+          <span class="bullet bullet-purple"></span>
+          <span><strong>美国3月11日AI监管大限将至：</strong>商务部须评估各州AI法律，FTC须发布AI执法声明，联邦vs州的监管博弈白热化</span>
+        </li>
+        <li>
+          <span class="bullet bullet-orange"></span>
+          <span><strong>全球AI基建投资逼近7000亿美元：</strong>五大科技巨头2026年资本开支几乎翻倍，AI不是泡沫——是真金白银的豪赌</span>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <main class="content">
+
+    <div class="section-header">
+      <div class="icon icon-drama">🔥</div>
+      <h2>风云故事 · 值得一聊的AI大事件</h2>
+      <span class="section-desc">有话题性、有观点、适合开场破冰</span>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-drama-style">头条 · 职场震荡</span>
+      <h3>Block一刀裁掉4000人：CEO说"小团队+AI比大团队更强"，AI替代人力的浪潮真的来了</h3>
+      <p class="summary">
+        支付公司Block（前身Square）的CEO Jack
+        Dorsey本周宣布裁员超过4000人，理由直白到令人震惊：他认为配备AI工具的小团队能超越传统大团队。这不是个案——自2025年底以来，全球已有数万个岗位因AI而被裁撤。Dorsey的逻辑是：AI让每个人的产出倍增，公司不再需要那么多人。这是科技行业首次有CEO如此直白地将大规模裁员与AI直接挂钩。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "最近支付巨头Block裁了4000人，CEO说AI让小团队就能干大团队的活。<strong>这件事说明AI对组织效率的提升已经从理论变成了企业决策的依据</strong>。对教育系统来说，AI不是来'裁老师'的，但它确实能大幅减轻行政负担——排课、成绩统计、家校沟通这些重复性工作，AI可以帮教师省出大量时间，让他们专注于教学本身。"
+        </p>
+      </div>
+      <p class="source">来源：TechCrunch / Axios · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-drama-style">跨界 · 好莱坞</span>
+      <h3>Netflix收购本·阿弗莱克的AI创业公司：好莱坞也开始"AI原生"了</h3>
+      <p class="summary">
+        好莱坞巨星Ben
+        Affleck秘密孵化了三年的AI公司InterPositive被Netflix整体收购。这家仅16人的公司开发的AI技术，能用一部影片自身的素材重新打光、调色、加特效——不用重新拍摄。导演在后期制作中可以像"调参数"一样调整画面效果。Netflix看中的是这项技术大幅降低制作成本、提升创作灵活性的潜力。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "连好莱坞都在用AI降本增效了——Netflix收购了一家AI公司，让导演不用重拍就能修改画面。<strong>AI正在渗透到每一个行业，不只是科技圈的事</strong>。教育领域也一样，AI辅助备课、智能批改、个性化学习推荐——这些不是未来的事，是正在发生的事。早布局的学校，就是'教育界的Netflix'。"
+        </p>
+      </div>
+      <p class="source">来源：Crescendo AI / TechCrunch · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-drama-style">安全 · 儿童保护</span>
+      <h3>加拿大商界联名呼吁：禁止16岁以下儿童使用AI工具</h3>
+      <p class="summary">
+        加拿大不列颠哥伦比亚省的商业团体联名呼吁联邦政府和省政府禁止16岁以下未成年人使用AI工具和社交媒体。这一呼吁源于近期发生的一起悲剧事件，使公众对AI对未成年人的影响产生了深刻反思。同一时期，英国首相斯塔默宣布加速推进AI聊天机器人的儿童安全监管，美国俄勒冈州也通过了要求聊天机器人运营商实施儿童保护措施的法案。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "全球多个国家正在推动限制未成年人使用AI——加拿大呼吁禁止16岁以下使用，英国加速立法，美国多州通过儿童保护法案。<strong>这恰恰说明教育系统引入AI时，'有管控的使用'比'完全禁止'更明智</strong>。学校可以成为孩子接触AI的'安全训练场'，关键是要有明确的使用规范和安全过滤机制。这也是教育局采购AI产品时最需要关注的能力。"
+        </p>
+      </div>
+      <p class="source">来源：Lethbridge Herald / Al Jazeera / Cooley · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-drama-style">人才 · 震荡</span>
+      <h3>阿里千问核心团队大批出走：中国AI大模型人才争夺战进入白热化</h3>
+      <p class="summary">
+        3月7日，阿里巴巴旗下通义千问的前负责人林俊旸正式离职，此前千问团队已有多名核心技术骨干相继离开。这场人才流失折射出中国AI行业的激烈竞争——大模型公司之间的竞争已经从"比模型"升级为"抢人才"。各家公司为了吸引顶尖AI研究者，不惜开出天价薪酬。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "阿里千问的核心团队最近大批出走，说明<strong>AI领域的竞争已经从技术竞争转向人才竞争</strong>。对教育系统来说，这其实是个利好信号——竞争越激烈，产品迭代越快，价格也会更有竞争力。但也提醒我们，<strong>选AI合作伙伴不能只看当下的产品，更要看团队的稳定性和长期发展能力</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：新浪科技 · 2026.03.07</p>
+    </div>
+
+    <div class="fancy-divider">◆ ◆ ◆</div>
+
+    <div class="section-header">
+      <div class="icon icon-tech">🚀</div>
+      <h2>技术前沿 · AI公司在做什么</h2>
+      <span class="section-desc">产品更新、能力跃迁、技术突破</span>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-tech-style">重磅发布</span>
+      <h3>OpenAI发布GPT-5.4：推理+编码+操作电脑三合一，一周内再融1100亿美元</h3>
+      <p class="summary">
+        OpenAI本周发布GPT-5.4，将推理、编码和计算机操作能力整合到单一模型中，官方称其为"最强全能专业模型"，在专业基准测试中83%的情况下能匹敌人类专家。几乎同时，OpenAI宣布完成1100亿美元融资——这是AI行业有史以来最大的一笔融资，用于扩展AI基础设施和产品。值得注意的是，中国的月之暗面Kimi在"计算机操作"方向上其实更早布局，其OK
+        Computer功能比GPT-5.4早了近半年。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "OpenAI刚发了最新的GPT-5.4，最大的变化是AI不仅能'想'和'写'，还能直接'动手操作电脑'了。<strong>这意味着AI正从'回答问题的助手'变成'能干活的员工'</strong>。在教育场景中，这种能力意味着AI可以帮教师自动制作课件、整理学生数据、生成个性化练习题——不只是给建议，而是直接帮你做出来。"
+        </p>
+      </div>
+      <p class="source">来源：LLM Stats / 界面新闻 · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-tech-style">硬件跃迁</span>
+      <h3>苹果M5全系列发布：AI性能提升4倍，笔记本变身"AI工作站"</h3>
+      <p class="summary">
+        苹果本周发布搭载M5芯片的全新MacBook Air、MacBook Pro和iPad
+        Air。M5芯片每个GPU核心都内置了"神经加速器"，AI任务性能比上一代M4提升最高4倍，大语言模型处理速度提升4倍，AI图像生成速度比M1提升8倍。这意味着复杂的AI应用——如本地运行大模型、实时翻译、AI辅助创作——都可以在笔记本上流畅完成，不再依赖云端。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "苹果新电脑的AI性能翻了4倍，一台笔记本就能跑AI大模型了。<strong>这说明AI正在从'云端服务'走向'本地设备'</strong>。对学校来说这是个好消息——未来教师和学生在自己的电脑上就能使用AI辅助教学，不一定需要昂贵的云计算费用。<strong>AI的使用门槛正在快速降低</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：Apple Newsroom · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-tech-style">语音交互</span>
+      <h3>Anthropic给Claude Code加上语音：对着电脑说话就能编程</h3>
+      <p class="summary">
+        Anthropic为旗下的编程工具Claude
+        Code增加了语音交互功能，开发者可以通过语音指令来进行编程——说出需求，AI就能理解并生成代码。这一功能目前正在小范围推广。语音交互的加入标志着人机协作的方式正在发生根本性变化：从"打字输入"到"自然对话"。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "现在连编程都可以用'说'的了——AI能听懂你的需求，直接写出代码。<strong>AI的交互方式正在变得越来越自然，越来越低门槛</strong>。不久的将来，教师可能只需要对AI说'帮我出一套三年级数学期中考试题，难度中等，重点考察分数加减法'，AI就能直接生成一套完整的试卷。"
+        </p>
+      </div>
+      <p class="source">来源：Crescendo AI · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-tech-style">基建 · 算力</span>
+      <h3>华为MWC发布新一代AI算力底座：为全球提供"美国芯片之外的选择"</h3>
+      <p class="summary">
+        在巴塞罗那MWC 2026大会上，华为发布了新一代AI算力底座SuperPod和全场景U6
+        GHz产品，将AI能力深度集成到网络的每一层。华为的定位很清晰：在全球AI芯片被美国公司（主要是Nvidia）垄断的背景下，为世界提供"另一种选择"。三星也在MWC上展示了Galaxy S26系列的端侧AI能力。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "华为刚在世界移动大会上发布了自己的AI算力平台，定位是提供'美国芯片之外的选择'。<strong>对教育系统来说，这意味着AI底层基础设施有了更多选项</strong>——不一定要依赖某一家的技术栈。在选择AI产品时，可以关注它底层用的是什么算力平台，<strong>自主可控的技术路线在教育这样的重要领域会越来越受重视</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：华为新闻中心 / Samsung Newsroom · 2026.03</p>
+    </div>
+
+    <div class="fancy-divider">◆ ◆ ◆</div>
+
+    <div class="section-header">
+      <div class="icon icon-edu">🎓</div>
+      <h2>AI+教育 · 与客户最相关的领域</h2>
+      <span class="section-desc">教育AI政策、应用、研究动态</span>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-edu-style">立法 · 重磅</span>
+      <h3>美国两党参议员联合提出"AI教育法案"：要求国家科学基金会研究AI课堂工具</h3>
+      <p class="summary">
+        美国参议员Cantwell和Moran本周联合提出跨党派的《NSF
+        AI教育法案》，指示美国国家科学基金会（NSF）与教育工作者合作，研究AI在课堂中的应用工具，创建公开的教育指南。法案特别强调要为K-12（幼儿园到高中）、低收入地区、农村和少数族裔学生提供AI学习机会，并扩大AI教育相关的奖学金和职业发展机会。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "美国刚刚提出了专门的AI教育法案，要求国家科学基金会研究AI在课堂里怎么用。<strong>这说明AI教育已经上升到国家战略层面</strong>。中国教育部也在推进'人工智能赋能教育行动'。可以说，AI进校园不是'要不要'的问题，而是'谁先做好'的问题。<strong>率先行动的教育局，将在这一轮变革中占据先发优势</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：U.S. Senate Commerce Committee · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-edu-style">产品 · 全球</span>
+      <h3>华为发布AIEC教育解决方案：一口气覆盖500+中小学的AI通识教育</h3>
+      <p class="summary">
+        华为在MWC
+        Barcelona上发布了面向基础教育的AIEC（AI教育中心）解决方案，为500多所中小学提供完整的AI通识教育体系——包括AI算力平台、开源大模型、10多个AI实践项目和50多个实验工具。这套方案的目标是让AI教育不再只是"精英学校"的专利，而是普及到更多普通中小学。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "华为刚发布了一套面向中小学的AI教育方案，已经覆盖500多所学校。<strong>AI通识教育正在从'选修课'变成'必修课'</strong>。现在全球的趋势是把AI素养纳入学生培养体系——美国23个州正在推49项AI教育法案，很多要求把AI素养作为毕业条件。<strong>教育局如果现在规划AI素养教育，正好赶上这波全球趋势</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：AAP News / Huawei · 2026.03.06</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-edu-style">市场 · 中国</span>
+      <h3>中国AI教育应用月活突破1.2亿：字节、阿里vs作业帮、猿辅导的"教育AI大战"</h3>
+      <p class="summary">
+        截至2025年第三季度，国内AI教育应用月活已突破1.2亿，同比增长340%。战场上形成了两大阵营：一方是字节跳动（豆包爱学）、阿里巴巴（千问智学）等互联网大厂，走"一体化AI助手"路线；另一方是作业帮、猿辅导（小猿AI）等教育公司，更依赖教研积淀。大厂强调AI通用能力，教育公司则将AI作为提升教学服务的工具。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "中国AI教育应用的月活用户已经超过1.2亿了，一年翻了3倍多。<strong>学生和家长已经在大规模使用AI学习了，学校不可能假装这件事不存在</strong>。关键问题是：学校是被动应对，还是主动引导？<strong>与其让学生自己乱用AI，不如学校建立规范，引入正规的AI教学工具，让AI在可控的环境下发挥正向价值</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：澎湃新闻 / 36氪 · 2026.02-03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-edu-style">政策 · 中国</span>
+      <h3>政府工作报告首提"智能体"：深化"人工智能+"，AI核心产业规模超1.2万亿</h3>
+      <p class="summary">
+        2026年政府工作报告明确提出"深化拓展'人工智能+'，促进新一代智能终端和智能体加快推广"，这是"智能体"概念首次进入政府工作报告。数据显示，我国AI企业已超6200家，核心产业规模超1.2万亿元，规上制造业AI技术应用普及率超30%。教育部也明确将继续推进"人工智能赋能教育行动"。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "今年政府工作报告第一次提到了'智能体'这个概念，要求深化'人工智能+'。<strong>这是非常明确的政策信号——AI应用是国家战略方向</strong>。教育部也在推'AI赋能教育行动'。对教育局来说，<strong>引入AI不仅是技术升级，更是响应国家政策、展示创新能力的契机</strong>。早行动的局长，就是走在政策前面的领导者。"
+        </p>
+      </div>
+      <p class="source">来源：观察者网 / 工信部 / 中新网 · 2026.03.05</p>
+    </div>
+
+    <div class="fancy-divider">◆ ◆ ◆</div>
+
+    <div class="section-header">
+      <div class="icon icon-policy">⚖️</div>
+      <h2>政策风向 · AI监管动态</h2>
+      <span class="section-desc">帮助客户理解合规趋势</span>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-policy-style">关键节点</span>
+      <h3>3月11日：美国AI监管的"审判日"——商务部和FTC同日交卷</h3>
+      <p class="summary">
+        本周三（3月11日）是美国AI监管的关键截止日：商务部须发布评估报告，识别哪些州AI法律与联邦政策"冲突"；联邦贸易委员会（FTC）须发布政策声明，说明联邦贸易法如何适用于AI。这是特朗普2025年12月签署的行政命令所设定的期限，核心目标是建立联邦统一AI标准，挑战和取代各州自行制定的AI法律。这场联邦与州政府之间的监管博弈，将深刻影响AI行业的合规格局。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "美国正在经历AI监管的关键时刻——联邦政府和州政府在争夺AI的监管权。<strong>全球趋势很清晰：AI监管正在从'自由发展'转向'规范发展'</strong>。对教育系统来说，这其实是好事——有了规范和标准，采购AI产品就有了明确的依据。<strong>建议现在就开始关注AI产品的合规资质，这将成为未来采购的'硬指标'</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：King & Spalding / Paul Hastings · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-policy-style">立法潮</span>
+      <h3>38个州通过AI法律，23个州推49项AI教育法案：美国AI立法"井喷"</h3>
+      <p class="summary">
+        2026年美国AI立法进入"井喷"模式：38个州已通过AI相关法律，涵盖选举中AI深度伪造的防范、医疗AI的信息披露、就业AI的偏见审计等领域。教育领域尤为突出——23个州正在推进49项涉及"AI进课堂"的法案，明确趋势是将AI素养嵌入学校日常教学，通过毕业要求、课程标准或独立课程来实现。科罗拉多州已成为全美首个拥有综合性AI法律的州。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "美国38个州已经通过了AI法律，23个州在推AI教育专项法案。<strong>AI素养正在像编程教育一样，被写进学校的教学要求里</strong>。中国的教育政策也在跟进——教育部明确要推进AI赋能教育。<strong>先行先试的教育局，不仅能为学生提供更好的教育，还能成为区域教育创新的标杆</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：FutureEd / NBC News / Transparency Coalition · 2026.03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-policy-style">国际</span>
+      <h3>欧盟AI法案8月全面生效倒计时：教育仍被列为"高风险"场景</h3>
+      <p class="summary">
+        距离欧盟AI法案2026年8月2日全面生效还有不到5个月。该法案将教育列为AI的"高风险"应用场景，意味着在教育中部署AI系统需要满足更严格的透明度、安全性和人类监督要求。虽然这是欧盟法规，但其标准正在成为全球参考基准，包括中国在内的多个国家都在参考其框架制定本国AI法规。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "欧盟把教育定义为AI的'高风险'领域，8月就要全面执行了。<strong>这意味着全球对教育AI的监管标准会越来越高</strong>。中国也在加快AI治理。建议教育局在引入AI时提前考虑：数据安全怎么保障？AI的决策过程能不能解释？<strong>现在就建立合规框架，比将来被动整改要从容得多</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：欧盟委员会 / Drata · 2026.03</p>
+    </div>
+
+    <div class="fancy-divider">◆ ◆ ◆</div>
+
+    <div class="section-header">
+      <div class="icon icon-trend">📊</div>
+      <h2>行业趋势 · 大方向在哪里</h2>
+      <span class="section-desc">宏观判断、行业共识</span>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-trend-style">天文数字</span>
+      <h3>全球AI基建投资逼近7000亿美元：五大巨头烧钱速度翻倍，AI不是泡沫是豪赌</h3>
+      <p class="summary">
+        2026年，微软、谷歌、亚马逊、Meta和甲骨文五大科技巨头的AI资本开支合计高达6600-6900亿美元，几乎是2025年的两倍。其中亚马逊计划投入2000亿美元（大部分用于数据中心），谷歌1750-1850亿，Meta
+        1150-1350亿，微软1200亿以上。高盛预测，2026年全球AI总支出将突破5000亿美元，同比增长44%。所有巨头都表示市场处于"供不应求"状态。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "全球科技巨头今年在AI上砸了近7000亿美元——这个数字比很多国家的GDP还大。<strong>这些公司用真金白银告诉世界：AI不是泡沫，而是未来十年最确定的方向</strong>。好消息是，巨头之间的竞争会让AI的使用成本持续下降。<strong>对教育系统来说，现在是性价比最好的入场时机——技术足够成熟，价格越来越亲民</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：Goldman Sachs / CNBC / Futurum · 2026.02-03</p>
+    </div>
+
+    <div class="news-card">
+      <span class="tag tag-trend-style">中国态势</span>
+      <h3>"机器人手机"惊艳MWC：中国AI智能体应用加速落地，从"云端对话"走向"端侧执行"</h3>
+      <p class="summary">
+        在MWC
+        2026上，中国荣耀推出的"机器人手机"引发全球关注——手机不再只是通讯工具，而是变成了能自主执行复杂任务的AI智能体终端。新华社评论指出，这反映了中国AI应用正在从"云端对话"走向"端侧执行"的关键转变。同期，深圳华强北数据显示AI学习设备在开学季热度飙升，AI眼镜、AI手表等穿戴设备海外订单占比持续扩大。
+      </p>
+      <div class="talk-point">
+        <div class="talk-point-label">💬 跟客户这样聊</div>
+        <p>
+          "中国的AI正在从'聊天机器人'进化成'能动手干活的智能体'。<strong>2026年被行业称为'AI智能体元年'——政府工作报告都专门提到了</strong>。华强北数据显示AI学习设备在开学季特别火爆，说明家长和学生已经在主动拥抱AI学习工具。<strong>学校与其被这股浪潮推着走，不如主动引领，成为本区域AI教育的先行者</strong>。"
+        </p>
+      </div>
+      <p class="source">来源：新华网 / 证券时报 · 2026.03</p>
+    </div>
+
+    <div class="knowledge-box">
+      <h3>📚 本期AI小词典 · 帮你听懂技术术语</h3>
+      <p>
+        <span
+          class="term">GPT-5.4</span>：OpenAI最新发布的AI大模型，最大特点是把"推理能力"（像人一样思考复杂问题）、"编码能力"（写代码）和"计算机操作"（像人一样操作电脑）整合到了一个模型里。以前这些需要不同的模型分别完成，现在一个模型全搞定。
+      </p>
+      <p style="margin-top: 12px;">
+        <span class="term">AI智能体（AI
+          Agent）</span>：不只是回答问题，而是能自主理解目标、规划步骤、调用工具、完成复杂任务的AI系统。跟普通AI的区别：你对普通AI说"帮我安排考试"，它会给你一个建议清单；你对AI智能体说同样的话，它会直接查教室、协调监考、生成安排表。今年政府工作报告首次提到这个概念。
+      </p>
+      <p style="margin-top: 12px;">
+        <span class="term">端侧AI（On-device
+          AI）</span>：AI直接运行在手机、电脑等本地设备上，而不是依赖云端服务器。好处是速度更快、隐私更好、不需要联网。苹果M5芯片的核心卖点就是端侧AI性能大幅提升。对学校的意义：即使网络条件不好，AI应用也能流畅使用。
+      </p>
+      <p style="margin-top: 12px;">
+        <span class="term">AI素养（AI
+          Literacy）</span>：理解AI的基本原理、能力边界，并能合理使用AI工具的能力。正在被越来越多国家和地区纳入学校课程标准——美国23个州正在立法推动。类比：就像20年前把"信息技术"列为必修课一样，"AI素养"正在成为新时代学生的基础能力。
+      </p>
+    </div>
+
+  </main>
+
+  <footer class="footer">
+    <p>
+      📮 AI前沿周报 · 每周日更新 · 为教育行业销售团队定制<br>
+      内容由AI辅助搜集整理，经人工审核编辑 · 仅供内部学习参考<br>
+      <em>建议转发给你的客户，展现你对AI领域的专业关注</em>
+    </p>
+    <p style="margin-top: 16px; font-size: 11px; color: #aaa;">
+      💡 使用建议：周日晚上花5分钟通读一遍，选2-3个故事记住"跟客户这样聊"的话术<br>
+      周一拜访前再扫一遍，你就是客户眼中最懂AI的销售
+    </p>
+  </footer>
+
+</body>
+
+</html>

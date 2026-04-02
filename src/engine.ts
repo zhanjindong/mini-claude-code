@@ -7,7 +7,7 @@ import chalk from "chalk";
 import { getToolByName, toOpenAITools } from "./tools/index.js";
 import { checkPermission } from "./permissions.js";
 import { getConfig } from "./config.js";
-import { runHooks } from "./hooks.js";
+import { runHooks, promptHookOverride } from "./hooks.js";
 
 import type { EngineChunk } from "./types.js";
 export type { EngineChunk };
@@ -306,13 +306,17 @@ export class QueryEngine {
           TOOL_INPUT: JSON.stringify(parsedInput),
         });
         if (beforeResult.blocked) {
-          yield { type: "tool", content: `${chalk.yellow("⊘")} ${chalk.bold(toolName)} ${chalk.yellow("blocked by hook: " + beforeResult.blockMessage)}\n` };
-          this.messages.push({
-            role: "tool",
-            tool_call_id: tc.id,
-            content: `Error: Tool execution blocked by hook: ${beforeResult.blockMessage}`,
-          });
-          continue;
+          const override = await promptHookOverride(toolName, beforeResult.blockMessage || "unknown reason");
+          if (!override) {
+            yield { type: "tool", content: `${chalk.yellow("⊘")} ${chalk.bold(toolName)} ${chalk.yellow("blocked by hook: " + beforeResult.blockMessage)}\n` };
+            this.messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: `Error: Tool execution blocked by hook: ${beforeResult.blockMessage}`,
+            });
+            continue;
+          }
+          // User chose to override — proceed with tool execution
         }
 
         // Show tool invocation header

@@ -105,12 +105,12 @@ const PROVIDERS = {
 #### 1. `src/config.ts` — 四层配置合并
 
 ```
-defaults → ~/.mcc/config.json → .mcc/config.json → 环境变量 → CLI 参数
+defaults → ~/.claude/config.json → .claude/config.json → 环境变量 → CLI 参数
 ```
 
 - **接口**: `MccConfig`（文件结构）/ `ResolvedConfig`（合并后完整配置）
 - **单例**: `loadConfig()` 初始化 + `getConfig()` 返回缓存
-- **持久化**: `saveUserConfig(patch)` 合并写入 `~/.mcc/config.json`
+- **持久化**: `saveUserConfig(patch)` 合并写入 `~/.claude/config.json`
 - **环境变量**: `API_KEY`/`OPENAI_API_KEY` → apiKey, `MCC_PROVIDER`/`MCC_MODEL`/`MCC_BASE_URL`
 
 #### 2. `src/context.ts` — CLAUDE.md 上下文加载
@@ -191,7 +191,7 @@ index.ts (main)
 
 - **传输**: JSON-RPC 2.0 over stdin/stdout (spawn 子进程)
 - **协议流程**: initialize → notifications/initialized → tools/list → tools/call
-- **配置**: `.mcc/mcp.json` / `~/.mcc/mcp.json`，格式 `{ mcpServers: { name: { command, args?, env?, cwd? } } }`
+- **配置**: `.claude/mcp.json` / `~/.claude/mcp.json`，格式 `{ mcpServers: { name: { command, args?, env?, cwd? } } }`
 - **工具注册**: 发现的 MCP 工具以 `mcp_{server}_{tool}` 命名注册到 ALL_TOOLS
 - **连接管理**: 模块级 Map 管理多连接，进程退出时自动 kill
 
@@ -207,13 +207,13 @@ class McpConnection {
 #### 2. `src/hooks.ts` — Hooks 生命周期
 
 - **事件类型**: `beforeToolUse`（可阻断，非零退出码阻止工具执行）/ `afterToolResult`
-- **配置**: `.mcc/hooks.json` / `~/.mcc/hooks.json`，格式 `{ hooks: [{ event, toolName?, command, timeout? }] }`
+- **配置**: `.claude/hooks.json` / `~/.claude/hooks.json`，格式 `{ hooks: [{ event, toolName?, command, timeout? }] }`
 - **环境变量注入**: `TOOL_NAME`、`TOOL_INPUT`（JSON）、`TOOL_RESULT`（afterToolResult only）
 - **执行**: execSync with timeout，支持按工具名过滤或匹配所有工具
 
 #### 3. `src/session.ts` — 会话持久化
 
-- **存储**: `~/.mcc/sessions/{id}.json`，包含完整 messages 数组
+- **存储**: `~/.claude/sessions/{id}.json`，包含完整 messages 数组
 - **元数据**: id / cwd / provider / model / createdAt / updatedAt / messageCount / summary
 - **ID 生成**: `Date.now().toString(36) + random`
 - **恢复**: `--resume` CLI 参数或 `/resume` 命令，按 cwd 匹配最近会话

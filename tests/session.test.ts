@@ -45,7 +45,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /** The SESSION_DIR value that session.ts computes at load time. */
-const SESSION_DIR = "/fake-home/.mcc/sessions";
+const SESSION_DIR = "/fake-home/.claude/sessions";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -226,13 +226,13 @@ describe("loadConfig", () => {
   describe("should_merge_permissions_from_two_layers_not_replace", () => {
     it("user config and project config permissions are combined", () => {
       withConfigFiles({
-        // ~/.mcc/config.json  — matched by the home-dir path containing ".mcc"
-        // .mcc/config.json    — matched by the cwd-relative path
+        // ~/.claude/config.json  — matched by the home-dir path containing ".claude"
+        // .claude/config.json    — matched by the cwd-relative path
         // We distinguish them by ensuring the home dir path ends with the OS
         // home directory prefix. For simplicity both are matched; the second
         // call wins for non-permission scalar fields, but permissions are
         // merged, so we can observe that here by providing different keys.
-        ".mcc/config.json": { permissions: { read: "allow" } },
+        ".claude/config.json": { permissions: { read: "allow" } },
       });
       // Override carries extra permission key
       const cfg = loadConfig({

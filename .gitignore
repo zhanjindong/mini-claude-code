@@ -3,3 +3,5 @@ dist/
 *.js.map
 .env
 .mcc/
+.claude/sessions/
+.claude/config.json

@@ -5,7 +5,7 @@ import os from "node:os";
 // --- T-01: Type definitions and defaults ---
 
 /**
- * Configuration file structure (~/.mcc/config.json or .mcc/config.json).
+ * Configuration file structure (~/.claude/config.json or .claude/config.json).
  */
 export interface MccConfig {
   provider?: string;
@@ -104,13 +104,13 @@ function mergeConfig(
 /**
  * Load and merge configuration from all layers (synchronous).
  *
- * Merge order: defaults <- ~/.mcc/config.json <- .mcc/config.json <- env vars <- CLI overrides
+ * Merge order: defaults <- ~/.claude/config.json <- .claude/config.json <- env vars <- CLI overrides
  */
 export function loadConfig(
   overrides?: Partial<MccConfig & { apiKey?: string }>
 ): ResolvedConfig {
-  const userConfigPath = path.join(os.homedir(), ".mcc", "config.json");
-  const projectConfigPath = path.resolve(".mcc", "config.json");
+  const userConfigPath = path.join(os.homedir(), ".claude", "config.json");
+  const projectConfigPath = path.resolve(".claude", "config.json");
 
   const userConfig = readJsonConfig(userConfigPath);
   const projectConfig = readJsonConfig(projectConfigPath);
@@ -149,12 +149,12 @@ export function getConfig(): ResolvedConfig {
 }
 
 /**
- * Save a partial config patch to the user config file (~/.mcc/config.json).
+ * Save a partial config patch to the user config file (~/.claude/config.json).
  * Creates the directory if it does not exist.
  * Merges patch into existing user config (does not overwrite unrelated fields).
  */
 export function saveUserConfig(patch: Partial<MccConfig>): void {
-  const configDir = path.join(os.homedir(), ".mcc");
+  const configDir = path.join(os.homedir(), ".claude");
   const configPath = path.join(configDir, "config.json");
 
   // Read existing user config

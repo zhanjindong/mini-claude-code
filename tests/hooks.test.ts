@@ -155,7 +155,7 @@ describe("loadHooks", () => {
         command: "user-hook",
       };
 
-      // The project-level path contains ".mcc/hooks.json" relative to cwd,
+      // The project-level path contains ".claude/hooks.json" relative to cwd,
       // and the user-level path contains the home dir. We use the home dir
       // segment to distinguish them. Since os.homedir() is real here we match
       // the last segment of each candidate.
