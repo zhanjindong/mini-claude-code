@@ -42,6 +42,11 @@ export const PROVIDERS: Record<string, { baseURL: string; defaultModel: string; 
     defaultModel: "qwen/qwen3.6-plus-preview:free",
     contextWindow: 131072,
   },
+  "minimax-vlm": {
+    baseURL: "https://api.minimaxi.com",
+    defaultModel: "vlm",
+    contextWindow: 0,
+  },
 };
 
 function buildSystemPrompt(skillsSummary?: string, contextContent?: string): string {
@@ -538,6 +543,22 @@ function formatToolInput(
       return `#${input.id}${input.status ? ` → ${input.status}` : ""}`;
     case "tasklist":
       return "";
+    case "browser":
+      return `${input.action}${input.url ? ` ${input.url}` : ""}${input.selector ? ` ${input.selector}` : ""}${input.format ? ` (${input.format})` : ""}`;
+    case "computer": {
+      const action = input.action as string;
+      if (action === "left_click" || action === "right_click" || action === "double_click" || action === "mouse_move")
+        return `${action} (${input.x}, ${input.y})`;
+      if (action === "drag")
+        return `drag (${input.start_x},${input.start_y}) → (${input.end_x},${input.end_y})`;
+      if (action === "type")
+        return `type "${((input.text as string) || "").slice(0, 40)}"`;
+      if (action === "key")
+        return `key ${input.key}`;
+      if (action === "scroll")
+        return `scroll ${input.direction || "down"}`;
+      return action;
+    }
     default:
       if (toolName.startsWith("mcp_")) {
         const args = Object.entries(input)
@@ -614,6 +635,13 @@ function formatToolResult(toolName: string, result: string): string {
       return truncLine(lines[0]);
     case "tasklist":
       return `${lines.length} task${lines.length !== 1 ? "s" : ""}`;
+    case "computer": {
+      if (lines.length === 0) return "(no output)";
+      // Show first 3 lines of screen description
+      const preview = lines.slice(0, 3).map(truncLine).join("\n    ");
+      const more = lines.length > 3 ? `\n    … +${lines.length - 3} lines` : "";
+      return preview + more;
+    }
     default: {
       if (lines.length === 0) return "(empty)";
       return truncLine(lines[0]);

@@ -6,7 +6,7 @@ export interface ToolInput {
 
 export type EngineChunk =
   | { type: "text"; content: string }
-  | { type: "tool"; content: string };
+  | { type: "tool"; content: string; progress?: boolean };
 
 export interface ToolDefinition {
   name: string;

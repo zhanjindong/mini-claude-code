@@ -11,6 +11,8 @@ import { WebSearchTool } from "./websearch.js";
 import { AgentTool } from "./agent.js";
 import { AskUserQuestionTool } from "./askuser.js";
 import { TaskCreateTool, TaskUpdateTool, TaskListTool } from "./task.js";
+import { BrowserTool } from "./browser.js";
+import { ComputerTool } from "./computer.js";
 import { loadSkills, executeSkill, getSkillsSummary, type Skill } from "../skills.js";
 import { initMcp } from "../mcp.js";
 
@@ -29,6 +31,8 @@ export const ALL_TOOLS: ToolDefinition[] = [
   TaskCreateTool,
   TaskUpdateTool,
   TaskListTool,
+  BrowserTool,
+  ComputerTool,
 ];
 
 function createSkillTool(skills: Skill[]): ToolDefinition {

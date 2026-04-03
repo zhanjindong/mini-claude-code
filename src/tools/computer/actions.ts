@@ -1,0 +1,192 @@
+// Computer action handlers
+
+import type { ToolInput } from "../../types.js";
+import { getDriver } from "./platform.js";
+import { analyzeScreenshot } from "./vlm.js";
+
+type ProgressCallback = (msg: string) => void;
+
+async function takeAndAnalyze(
+  prompt: string,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const driver = getDriver();
+  onProgress?.("  📸 Taking screenshot...");
+  const { base64, width, height } = await driver.screenshot();
+
+  onProgress?.("  🔍 Analyzing screenshot with VLM...");
+  const analysis = await analyzeScreenshot(base64, prompt);
+  return `Screenshot (${width}x${height}):\n${analysis}`;
+}
+
+async function actionScreenshot(
+  _input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  return takeAndAnalyze(
+    "Describe the current screen content in detail. List all visible windows, UI elements, text, and their approximate positions.",
+    onProgress
+  );
+}
+
+async function actionMouseMove(input: ToolInput): Promise<string> {
+  const x = input.x as number;
+  const y = input.y as number;
+  await getDriver().mouseMove(x, y);
+  return `Mouse moved to (${x}, ${y})`;
+}
+
+async function actionLeftClick(
+  input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const x = input.x as number;
+  const y = input.y as number;
+  await getDriver().leftClick(x, y);
+
+  const screenshotAfter = input.screenshot_after !== false;
+  if (screenshotAfter) {
+    const analysis = await takeAndAnalyze(
+      `Describe what changed on screen after clicking at coordinates (${x}, ${y}). Focus on the area around the click point.`,
+      onProgress
+    );
+    return `Clicked at (${x}, ${y})\n${analysis}`;
+  }
+  return `Clicked at (${x}, ${y})`;
+}
+
+async function actionRightClick(
+  input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const x = input.x as number;
+  const y = input.y as number;
+  await getDriver().rightClick(x, y);
+
+  const screenshotAfter = input.screenshot_after !== false;
+  if (screenshotAfter) {
+    const analysis = await takeAndAnalyze(
+      `Describe what changed on screen after right-clicking at coordinates (${x}, ${y}). Focus on any context menu that appeared.`,
+      onProgress
+    );
+    return `Right-clicked at (${x}, ${y})\n${analysis}`;
+  }
+  return `Right-clicked at (${x}, ${y})`;
+}
+
+async function actionDoubleClick(
+  input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const x = input.x as number;
+  const y = input.y as number;
+  await getDriver().doubleClick(x, y);
+
+  const screenshotAfter = input.screenshot_after !== false;
+  if (screenshotAfter) {
+    const analysis = await takeAndAnalyze(
+      `Describe what changed on screen after double-clicking at coordinates (${x}, ${y}).`,
+      onProgress
+    );
+    return `Double-clicked at (${x}, ${y})\n${analysis}`;
+  }
+  return `Double-clicked at (${x}, ${y})`;
+}
+
+async function actionDrag(
+  input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const sx = input.start_x as number;
+  const sy = input.start_y as number;
+  const ex = input.end_x as number;
+  const ey = input.end_y as number;
+  await getDriver().drag(sx, sy, ex, ey);
+
+  const screenshotAfter = input.screenshot_after !== false;
+  if (screenshotAfter) {
+    const analysis = await takeAndAnalyze(
+      `Describe what changed on screen after dragging from (${sx}, ${sy}) to (${ex}, ${ey}).`,
+      onProgress
+    );
+    return `Dragged from (${sx}, ${sy}) to (${ex}, ${ey})\n${analysis}`;
+  }
+  return `Dragged from (${sx}, ${sy}) to (${ex}, ${ey})`;
+}
+
+async function actionType(input: ToolInput): Promise<string> {
+  const text = input.text as string;
+  await getDriver().typeText(text);
+  return `Typed: "${text.length > 50 ? text.slice(0, 50) + "..." : text}"`;
+}
+
+async function actionKey(input: ToolInput): Promise<string> {
+  const key = input.key as string;
+  await getDriver().keyPress(key);
+  return `Key pressed: ${key}`;
+}
+
+async function actionScroll(
+  input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const direction = (input.direction as string) || "down";
+  const amount = (input.amount as number) || 3;
+  await getDriver().scroll(direction, amount);
+
+  const screenshotAfter = input.screenshot_after !== false;
+  if (screenshotAfter) {
+    const analysis = await takeAndAnalyze(
+      `Describe the current screen content after scrolling ${direction}. What is now visible?`,
+      onProgress
+    );
+    return `Scrolled ${direction} (${amount}x)\n${analysis}`;
+  }
+  return `Scrolled ${direction} (${amount}x)`;
+}
+
+async function actionCursorPosition(): Promise<string> {
+  const { x, y } = await getDriver().getCursorPosition();
+  return `Cursor position: (${x}, ${y})`;
+}
+
+const ACTIONS: Record<
+  string,
+  (input: ToolInput, onProgress?: ProgressCallback) => Promise<string>
+> = {
+  screenshot: actionScreenshot,
+  mouse_move: actionMouseMove,
+  left_click: actionLeftClick,
+  right_click: actionRightClick,
+  double_click: actionDoubleClick,
+  drag: actionDrag,
+  type: actionType,
+  key: actionKey,
+  scroll: actionScroll,
+  cursor_position: actionCursorPosition,
+};
+
+export async function dispatch(
+  input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const action = input.action as string;
+  if (!action) {
+    return "Error: 'action' parameter is required";
+  }
+
+  const handler = ACTIONS[action];
+  if (!handler) {
+    return `Error: Unknown action '${action}'. Valid actions: ${Object.keys(ACTIONS).join(", ")}`;
+  }
+
+  try {
+    return await handler(input, onProgress);
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    if (msg.includes("cliclick is required")) {
+      return msg;
+    }
+    return `Error [${action}]: ${msg}`;
+  }
+}

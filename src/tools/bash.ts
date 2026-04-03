@@ -208,7 +208,7 @@ export const BashTool: ToolDefinition = {
           if (currentLine.trim() && currentLine !== lastYielded && !throttleTimer) {
             throttleTimer = setTimeout(() => { throttleTimer = null; }, 300);
             lastYielded = currentLine;
-            yield { type: "tool" as const, content: currentLine };
+            yield { type: "tool" as const, content: currentLine, progress: true };
           }
         } else {
           await new Promise<void>((r) => {

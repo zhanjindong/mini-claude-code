@@ -4,6 +4,8 @@
 
 用 ~7000 行 TypeScript 实现了 Claude Code 的核心交互体验：流式对话、工具调用、Skills、MCP、Hooks、权限、会话管理等完整功能。
 
+> **平台支持：** 当前对 **macOS** 支持友好，Windows 平台暂未支持。
+
 ## 功能一览
 
 | 类别 | 功能 | 说明 |

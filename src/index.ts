@@ -59,59 +59,44 @@ function readKeypress(): Promise<string> {
  */
 function readLine(rl: readline.Interface, prompt: string, hidden = false): Promise<string> {
   return new Promise((resolve) => {
-    // Pause the main readline so we can control input
     const savedData = process.stdin.rawListeners("data");
     const savedKeypress = process.stdin.rawListeners("keypress");
     process.stdin.removeAllListeners("data");
     process.stdin.removeAllListeners("keypress");
 
-    if (hidden) {
-      // Manual hidden input: read raw chars, echo *, handle backspace/enter
-      process.stdout.write(prompt);
-      let buf = "";
-      const wasRaw = process.stdin.isRaw;
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
+    process.stdout.write(prompt);
+    let buf = "";
+    const wasRaw = process.stdin.isRaw;
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
 
-      const onData = (data: Buffer) => {
-        const ch = data.toString();
-        if (ch === "\r" || ch === "\n") {
-          process.stdin.removeListener("data", onData);
-          process.stdin.setRawMode(wasRaw ?? false);
-          for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
-          for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
-          process.stdout.write("\n");
-          resolve(buf);
-        } else if (ch === "\x03") {
-          // Ctrl+C
-          process.stdin.removeListener("data", onData);
-          process.stdin.setRawMode(wasRaw ?? false);
-          for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
-          for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
-          process.stdout.write("\n");
-          resolve("");
-        } else if (ch === "\x7f" || ch === "\b") {
-          // Backspace
-          if (buf.length > 0) {
-            buf = buf.slice(0, -1);
-            process.stdout.write("\b \b");
-          }
-        } else {
-          buf += ch;
-          process.stdout.write("*");
+    const cleanup = () => {
+      process.stdin.removeListener("data", onData);
+      process.stdin.setRawMode(wasRaw ?? false);
+      for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
+      for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
+      process.stdout.write("\n");
+    };
+
+    const onData = (data: Buffer) => {
+      const ch = data.toString();
+      if (ch === "\r" || ch === "\n") {
+        cleanup();
+        resolve(buf);
+      } else if (ch === "\x03") {
+        cleanup();
+        resolve("");
+      } else if (ch === "\x7f" || ch === "\b") {
+        if (buf.length > 0) {
+          buf = buf.slice(0, -1);
+          process.stdout.write("\b \b");
         }
-      };
-      process.stdin.on("data", onData);
-    } else {
-      // Normal visible input
-      const tmpRl = readline.createInterface({ input: process.stdin, output: process.stdout });
-      tmpRl.question(prompt, (answer) => {
-        tmpRl.close();
-        for (const fn of savedData) process.stdin.on("data", fn as (...args: any[]) => void);
-        for (const fn of savedKeypress) process.stdin.on("keypress", fn as (...args: any[]) => void);
-        resolve(answer.trim());
-      });
-    }
+      } else {
+        buf += ch;
+        process.stdout.write(hidden ? "*" : ch);
+      }
+    };
+    process.stdin.on("data", onData);
   });
 }
 
@@ -167,6 +152,132 @@ async function handleLogin(rl: readline.Interface, engine: QueryEngine): Promise
   console.log(chalk.green(`\nLogged in: ${chalk.bold(selectedProvider)} (${engine.modelName})`));
 }
 
+/** Main model provider presets (excluding VLM-only providers) */
+const MAIN_PROVIDERS = [
+  { key: "minimax", desc: "MiniMax-M2.5" },
+  { key: "deepseek", desc: "DeepSeek Chat" },
+  { key: "openai", desc: "GPT-4o" },
+  { key: "openrouter", desc: "Claude / Gemini / etc." },
+  { key: "qwen", desc: "Qwen 通义千问" },
+];
+
+/**
+ * Interactive /model main flow: select provider, enter API key, optional model, save config, reconfigure engine.
+ */
+async function handleMainModelSetup(rl: readline.Interface, engine: QueryEngine): Promise<void> {
+  console.log(chalk.bold("\nSelect Provider:"));
+  MAIN_PROVIDERS.forEach((p, i) => {
+    const current = p.key === engine.providerName ? chalk.green(" (current)") : "";
+    console.log(`  ${chalk.cyan(String(i + 1))}. ${chalk.bold(p.key)}${current} ${chalk.dim(`— ${p.desc}`)}`);
+  });
+  console.log(`  ${chalk.cyan("0")}. ${chalk.dim("Cancel")}`);
+  process.stdout.write(chalk.dim("\nSelect (1-" + MAIN_PROVIDERS.length + ", 0 to cancel): "));
+
+  const key = await readKeypress();
+  process.stdout.write(key + "\n");
+
+  if (key === "\x03" || key === "0") {
+    console.log(chalk.dim("Cancelled."));
+    return;
+  }
+
+  const idx = parseInt(key, 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= MAIN_PROVIDERS.length) {
+    console.log(chalk.yellow("Invalid selection."));
+    return;
+  }
+
+  const selectedProvider = MAIN_PROVIDERS[idx].key;
+  const apiKey = await readLine(rl, chalk.dim("API Key: "), true);
+
+  if (!apiKey) {
+    console.log(chalk.dim("Cancelled."));
+    return;
+  }
+
+  const preset = PROVIDERS[selectedProvider];
+  const defaultModel = preset?.defaultModel || "";
+  const modelInput = await readLine(
+    rl,
+    chalk.dim(`Model (Enter for default${defaultModel ? ` "${defaultModel}"` : ""}): `),
+  );
+  const model = modelInput || defaultModel;
+
+  // Reconfigure engine
+  engine.reconfigure({ provider: selectedProvider, apiKey, model });
+
+  // Save to user config
+  saveUserConfig({ provider: selectedProvider, apiKey, model });
+
+  // Update cached config
+  const config = getConfig();
+  config.provider = selectedProvider;
+  config.apiKey = apiKey;
+  config.model = model;
+
+  console.log(chalk.green(`\n✓ Main model configured: ${chalk.bold(selectedProvider)} (${model})`));
+}
+
+/** VLM provider presets for the /model vlm interactive flow */
+const VLM_PROVIDERS = [
+  { key: "minimax-vlm", label: "MiniMax VLM", desc: "专有接口，推荐" },
+  { key: "openai", label: "GPT-4o Vision", desc: "OpenAI Vision" },
+  { key: "openrouter", label: "OpenRouter Vision", desc: "OpenRouter Vision models" },
+];
+
+/**
+ * Interactive /model vlm flow: select VLM provider, enter API key, optional model, save config.
+ */
+async function handleVlmSetup(rl: readline.Interface): Promise<void> {
+  console.log(chalk.bold("\nSelect VLM Provider:"));
+  VLM_PROVIDERS.forEach((p, i) => {
+    console.log(`  ${chalk.cyan(String(i + 1))}. ${chalk.bold(p.key)} ${chalk.dim(`— ${p.desc}`)}`);
+  });
+  console.log(`  ${chalk.cyan("0")}. ${chalk.dim("Cancel")}`);
+  process.stdout.write(chalk.dim("\nSelect (1-" + VLM_PROVIDERS.length + ", 0 to cancel): "));
+
+  const key = await readKeypress();
+  process.stdout.write(key + "\n");
+
+  if (key === "\x03" || key === "0") {
+    console.log(chalk.dim("Cancelled."));
+    return;
+  }
+
+  const idx = parseInt(key, 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= VLM_PROVIDERS.length) {
+    console.log(chalk.yellow("Invalid selection."));
+    return;
+  }
+
+  const selectedProvider = VLM_PROVIDERS[idx].key;
+  const apiKey = await readLine(rl, chalk.dim("API Key: "), true);
+
+  if (!apiKey) {
+    console.log(chalk.dim("Cancelled."));
+    return;
+  }
+
+  const preset = PROVIDERS[selectedProvider];
+  const defaultModel = preset?.defaultModel || "";
+  const modelInput = await readLine(
+    rl,
+    chalk.dim(`Model (Enter for default${defaultModel ? ` "${defaultModel}"` : ""}): `),
+  );
+  const vlmModel = modelInput || defaultModel;
+
+  // Save to user config
+  saveUserConfig({ vlmProvider: selectedProvider, vlmApiKey: apiKey, vlmModel: vlmModel } as any);
+
+  // Update cached config
+  const config = getConfig();
+  config.vlmProvider = selectedProvider;
+  config.vlmApiKey = apiKey;
+  config.vlmModel = vlmModel;
+
+  console.log(chalk.green(`\n✓ VLM configured: ${chalk.bold(selectedProvider)}${vlmModel ? ` (${vlmModel})` : ""}`));
+}
+
 async function main() {
   const args = process.argv.slice(2);
 
@@ -217,7 +328,7 @@ ${chalk.bold("REPL Commands:")}
   /hooks      List loaded hooks
   /mcp        List MCP servers and tools
   /tasks      List all tasks
-  /model      Switch model at runtime
+  /model      Switch model (main/vlm)
   /login      Switch provider and API key
   /help       Show help
   /exit       Exit
@@ -286,8 +397,12 @@ ${chalk.bold("REPL Commands:")}
   // Initialize MCP servers
   const mcpToolCount = await registerMcpTools();
 
-  // Ensure MCP connections are cleaned up on exit
-  process.on("exit", () => closeMcp());
+  // Ensure MCP connections and browser are cleaned up on exit
+  const { closeBrowser } = await import("./tools/browser/session.js");
+  process.on("exit", () => {
+    closeMcp();
+    closeBrowser();
+  });
 
   // Build engine options from resolved config
   const engineOpts: EngineOptions = {
@@ -390,7 +505,7 @@ ${chalk.bold("REPL Commands:")}
     { cmd: "/mcp", desc: "List MCP servers and tools" },
     { cmd: "/permissions", desc: "Show permission rules" },
     { cmd: "/tasks", desc: "List all tasks" },
-    { cmd: "/model", desc: "Switch model at runtime" },
+    { cmd: "/model", desc: "Switch model (main/vlm)" },
     { cmd: "/login", desc: "Switch provider and API key" },
     { cmd: "/queue", desc: "Show queued inputs" },
     { cmd: "/exit", desc: "Exit" },
@@ -761,8 +876,8 @@ ${chalk.bold("REPL Commands:")}
         return;
       }
 
-      // Built-in commands (sync, no API call)
-      if (handleBuiltinCommand(input, engine, rl, skills, persistSession, inputQueue)) {
+      // Built-in commands
+      if (await handleBuiltinCommand(input, engine, rl, skills, persistSession, inputQueue)) {
         rl.prompt();
         return;
       }
@@ -831,7 +946,7 @@ ${chalk.bold("REPL Commands:")}
             writeAbove(rl, chalk.dim(`Cleared ${inputQueue.length} queued input(s).`));
             inputQueue.length = 0;
           }
-          handleBuiltinCommand(trimmed, engine, rl, skills, persistSession, inputQueue);
+          await handleBuiltinCommand(trimmed, engine, rl, skills, persistSession, inputQueue);
           return;
         }
 
@@ -911,6 +1026,31 @@ function writeAbove(rl: readline.Interface, text: string) {
   rli._refreshLine();
 }
 
+/**
+ * Write a progress line (e.g. download progress bar) in-place, overwriting the previous progress.
+ * Does NOT add a newline — the next progress call overwrites the same line.
+ */
+function writeProgressLine(rl: readline.Interface, text: string) {
+  const rli = rl as any;
+  const prevRows = rli.prevRows || 0;
+  if (prevRows > 0) {
+    readline.moveCursor(process.stdout, 0, -prevRows);
+  }
+  // Clear from prompt start to end of screen, write progress text (no trailing newline)
+  process.stdout.write("\r\x1b[J");
+  process.stdout.write(text);
+  // Leave cursor at end of progress text; readline prompt is NOT redrawn
+  // so the progress line stays visible and overwritable
+  rli.prevRows = 0;
+}
+
+/**
+ * Clear an active progress line and redraw the prompt.
+ */
+function clearProgressLine(rl: readline.Interface) {
+  process.stdout.write("\r\x1b[K");
+}
+
 /** Fallback spinner for one-shot mode (no readline) — writes directly to stdout */
 function createFallbackSpinner() {
   let frame = 0;
@@ -963,6 +1103,7 @@ function createSpinner(rl: readline.Interface) {
 
 async function runQuery(engine: QueryEngine, input: string, rl?: readline.Interface, inputQueue?: string[]) {
   let textBuffer = "";
+  let hasActiveProgress = false; // tracks whether a progress line is currently displayed
   // In one-shot mode (no rl), write directly to stdout; in REPL mode, write above readline
   const write = rl
     ? (text: string) => writeAbove(rl, text)
@@ -1026,6 +1167,10 @@ async function runQuery(engine: QueryEngine, input: string, rl?: readline.Interf
 
   function cleanup() {
     spinner.stop();
+    if (hasActiveProgress && rl) {
+      clearProgressLine(rl);
+      hasActiveProgress = false;
+    }
     if (escapeTimer) { clearTimeout(escapeTimer); escapeTimer = null; }
     process.stdin.removeListener("keypress", onKeypress);
     // Restore idle prompt
@@ -1040,7 +1185,20 @@ async function runQuery(engine: QueryEngine, input: string, rl?: readline.Interf
       spinner.stop();
       if (chunk.type === "text") {
         textBuffer += chunk.content;
+      } else if (chunk.progress && rl) {
+        // Progress line (e.g. download progress bar): overwrite in-place
+        if (!hasActiveProgress) {
+          flushText();
+        }
+        writeProgressLine(rl, chalk.dim("  " + chunk.content));
+        hasActiveProgress = true;
       } else {
+        // Normal tool output
+        if (hasActiveProgress) {
+          // Clear the progress line and move to a new line
+          clearProgressLine(rl!);
+          hasActiveProgress = false;
+        }
         // Flush buffered text as markdown before showing tool output
         flushText();
         write(chunk.content.replace(/\n$/, "")); // tool output (strip trailing newline, write adds one)
@@ -1068,14 +1226,14 @@ async function runQuery(engine: QueryEngine, input: string, rl?: readline.Interf
   }
 }
 
-function handleBuiltinCommand(
+async function handleBuiltinCommand(
   input: string,
   engine: QueryEngine,
   rl: readline.Interface,
   skills: Skill[],
   persistSession: () => void,
   inputQueue?: string[]
-): boolean {
+): Promise<boolean> {
   const cmd = input.split(/\s+/)[0].toLowerCase();
 
   switch (cmd) {
@@ -1255,9 +1413,21 @@ function handleBuiltinCommand(
     case "/model": {
       const modelArg = input.slice("/model".length).trim();
       if (!modelArg) {
+        const cfg = getConfig();
         console.log(chalk.bold(`\nCurrent model: ${engine.modelName}`));
-        console.log(chalk.dim("Usage: /model <model-name>"));
-        console.log(chalk.dim("Example: /model gpt-4o-mini"));
+        if (cfg.vlmProvider) {
+          const vlmModel = cfg.vlmModel || PROVIDERS[cfg.vlmProvider]?.defaultModel || "(default)";
+          console.log(chalk.bold(`VLM model: ${cfg.vlmProvider} / ${vlmModel}`));
+        } else {
+          console.log(chalk.dim(`VLM model: not configured (run /model vlm to set up)`));
+        }
+        console.log(chalk.dim("\nUsage: /model main          — configure main model provider"));
+        console.log(chalk.dim("       /model vlm           — configure VLM provider"));
+        console.log(chalk.dim("       /model <model-name>  — quick switch model name"));
+      } else if (modelArg === "main") {
+        await handleMainModelSetup(rl, engine);
+      } else if (modelArg === "vlm") {
+        await handleVlmSetup(rl);
       } else {
         engine.setModel(modelArg);
         console.log(chalk.green(`Model switched to: ${modelArg}`));
@@ -1293,7 +1463,7 @@ ${chalk.bold("Commands:")}
   /mcp          List MCP servers and tools
   /permissions  Show permission rules
   /tasks        List all tasks
-  /model        Switch model at runtime
+  /model        Switch model (main/vlm)
   /login        Switch provider and API key
   /queue        Show queued inputs
   /exit         Exit

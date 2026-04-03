@@ -16,6 +16,14 @@ export interface MccConfig {
   permissions?: Record<string, "allow" | "deny" | "ask">;
   /** Custom tool paths (reserved for Phase 2). */
   toolPaths?: string[];
+  /** VLM (Vision Language Model) provider name. */
+  vlmProvider?: string;
+  /** VLM model name. */
+  vlmModel?: string;
+  /** VLM API key (can differ from main apiKey). */
+  vlmApiKey?: string;
+  /** VLM base URL. */
+  vlmBaseURL?: string;
 }
 
 /**
@@ -29,6 +37,10 @@ export interface ResolvedConfig {
   permissions: Record<string, "allow" | "deny" | "ask">;
   toolPaths: string[];
   apiKey: string;
+  vlmProvider: string;
+  vlmModel: string;
+  vlmApiKey: string;
+  vlmBaseURL: string;
 }
 
 const defaults: ResolvedConfig = {
@@ -39,6 +51,10 @@ const defaults: ResolvedConfig = {
   permissions: {},
   toolPaths: [],
   apiKey: "",
+  vlmProvider: "",
+  vlmModel: "",
+  vlmApiKey: "",
+  vlmBaseURL: "",
 };
 
 // --- T-02: File reading and merging ---
@@ -74,6 +90,18 @@ function readEnvConfig(): Partial<MccConfig & { apiKey?: string }> {
   if (process.env.MCC_BASE_URL) {
     env.baseURL = process.env.MCC_BASE_URL;
   }
+  if (process.env.MCC_VLM_PROVIDER) {
+    env.vlmProvider = process.env.MCC_VLM_PROVIDER;
+  }
+  if (process.env.MCC_VLM_MODEL) {
+    env.vlmModel = process.env.MCC_VLM_MODEL;
+  }
+  if (process.env.MCC_VLM_API_KEY) {
+    env.vlmApiKey = process.env.MCC_VLM_API_KEY;
+  }
+  if (process.env.MCC_VLM_BASE_URL) {
+    env.vlmBaseURL = process.env.MCC_VLM_BASE_URL;
+  }
 
   return env;
 }
@@ -94,6 +122,10 @@ function mergeConfig(
   if (layer.baseURL !== undefined) merged.baseURL = layer.baseURL;
   if (layer.apiKey !== undefined) merged.apiKey = layer.apiKey;
   if (layer.toolPaths !== undefined) merged.toolPaths = layer.toolPaths;
+  if ((layer as any).vlmProvider !== undefined) merged.vlmProvider = (layer as any).vlmProvider;
+  if ((layer as any).vlmModel !== undefined) merged.vlmModel = (layer as any).vlmModel;
+  if ((layer as any).vlmApiKey !== undefined) merged.vlmApiKey = (layer as any).vlmApiKey;
+  if ((layer as any).vlmBaseURL !== undefined) merged.vlmBaseURL = (layer as any).vlmBaseURL;
   if (layer.permissions !== undefined) {
     merged.permissions = Object.assign({}, base.permissions, layer.permissions);
   }
