@@ -260,6 +260,128 @@ class McpConnection {
 
 ---
 
+## Phase 4 — Computer Use 改进
+
+> 状态: 📋 待实现
+> 日期: 2026-04-03
+> 参考: claude-code 官方实现 (`~/github/claude-code/src/utils/computerUse/`)
+
+### 背景
+
+v0.2.0 实现了 Computer Use 简易版本（Browser + Computer tool），基于 cliclick + screencapture + VLM。对比 claude-code 官方实现（Rust enigo + Swift SCContentFilter + MCP Server 架构），在安全性、操控可靠性、用户体验方面有明确改进空间。
+
+### 改进项
+
+#### 4.1 安全机制
+
+**4.1.1 会话文件锁（P0）**
+
+防止多个 mini-claude-code 实例同时操控桌面导致鼠标/键盘冲突。
+
+- 新建 `src/tools/computer/lock.ts`
+- 锁文件：`~/.config/mcc/computer-use.lock`，内容 `{sessionId, pid, acquiredAt}`
+- `tryAcquire()`: 原子 `O_EXCL` 创建；EEXIST 时读取并检测 PID 存活（`process.kill(pid, 0)`）；死进程自动回收
+- `release()`: 校验 ownership 后 unlink，注册 `process.on('exit')` 自动清理
+- Computer tool dispatch 入口调用，获取失败返回错误提示
+
+官方参考：`computerUseLock.ts`（216 行），支持 re-entrant、stale recovery、race-safe
+
+**4.1.2 Modifier 键安全释放（P2）**
+
+防止 key action 中途失败导致修饰键"粘滞"。
+
+- `platform.ts` 的 `keyPress()` 拆分 kd/kp/ku 为独立调用
+- 每个 kd 有对应 try/finally ku，LIFO 释放
+- 或在 dispatch 结束后统一发送"全部释放"命令
+
+官方参考：`executor.ts` 中 `releasePressed()` LIFO 模式
+
+#### 4.2 操控可靠性
+
+**4.2.1 移动后 Settle 延迟（P0）**
+
+- `platform.ts` mouseMove 后增加 50ms 延迟
+- 原因：HID 系统需要往返时间，无延迟时后续 click 可能不识别鼠标位置
+- 改动量：3 行
+
+官方参考：`executor.ts` `MOVE_SETTLE_MS = 50`
+
+**4.2.2 鼠标移动动画（P1）**
+
+拖拽和悬停操作需要平滑移动才能被 GUI 正确识别。
+
+- `platform.ts` 新增 `animatedMove(fromX, fromY, toX, toY)`
+- 距离成比例时长（2000px/sec，上限 500ms），ease-out-cubic 缓动
+- 短距离（<30px）退化为瞬移 + settle
+- 60fps 分帧，每帧调用 `cliclick m:x,y`
+
+官方参考：`executor.ts` `animatedMove()` + ease-out-cubic
+
+**4.2.3 剪贴板安全文本输入（P1）**
+
+`cliclick t:` 对中文、emoji、换行符等特殊字符可能失败。
+
+- `platform.ts` 新增 `typeViaClipboard(text)` 方法
+- 流程：pbcopy 写入 → pbpaste 验证 → cliclick Cmd+V 粘贴 → 恢复原剪贴板
+- 验证失败则不执行粘贴（防数据污染）
+- `typeText()` 检测特殊字符时自动选择此路径
+
+官方参考：`executor.ts` `typeViaClipboard()` 含 round-trip 验证 + finally 恢复
+
+**4.2.4 滚轮滚动替代方向键（P2）**
+
+- 当前用方向键模拟，不精确且对某些应用无效
+- 调研 AppleScript / cliclick 滚轮方案
+- 需要平台调研
+
+#### 4.3 用户体验
+
+**4.3.1 权限主动检测与引导（P1）**
+
+- Computer tool 首次执行时主动测试 screencapture + cliclick
+- 失败时输出 System Settings 路径 + 步骤指引
+- 在 `actions.ts` dispatch 入口添加一次性检测
+
+官方参考：`permissions/` 目录的 TCC 检测 UI
+
+**4.3.2 cliclick 自动安装（P2）**
+
+- 检测 cliclick 不存在时询问用户是否 `brew install cliclick`
+- 投入：~20 行
+
+**4.3.3 截图尺寸缓存（P1）**
+
+- `MacOSDriver` 缓存上次截图 width/height
+- 避免每次 sips 查询
+- 投入：5 行
+
+#### 4.4 视觉与截图
+
+**4.4.1 排除终端窗口截图（P2）**
+
+- 当前 screencapture 全屏包含终端，VLM 会看到 mini-claude-code 自身输出
+- 方案 A：VLM prompt 中说明忽略终端
+- 方案 B：检测终端窗口 ID，使用 screencapture 排除
+- 方案 C：截图前最小化终端
+
+官方参考：`common.ts` 终端检测 + Swift 截屏排除
+
+**4.4.2 多显示器支持（P3）**
+
+- 解析所有显示器信息，支持目标显示器选择
+- 坐标映射考虑显示器偏移
+
+### 架构演进方向（长期）
+
+| 方向 | 说明 | 优先级 |
+|------|------|--------|
+| MCP Server 模式 | 工具通过 MCP 暴露，进程隔离 | P4 |
+| 原生模块替代 subprocess | Rust/Swift 原生模块，消除 cliclick 依赖 | P4 |
+| ESC 全局热键 | CGEventTap 拦截，紧急制动 | P3 |
+| 应用名过滤防注入 | Unicode-aware 字符白名单 | P3（扩展时需要）|
+
+---
+
 ## 风险评估
 
 | 风险 | 可能性 | 影响 | 缓解措施 |
