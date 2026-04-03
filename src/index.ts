@@ -471,6 +471,7 @@ ${chalk.bold("REPL Commands:")}
   let menuIdx = 0;
   let menuScroll = 0; // first visible index in scroll window
   let menuLines = 0; // number of rendered menu lines on screen
+  let lastFilterPrefix = "";
 
   function clearMenu() {
     if (menuLines === 0) return;
@@ -506,20 +507,29 @@ ${chalk.bold("REPL Commands:")}
     process.stdout.write("\n".repeat(totalLines)); // ensure scroll room
     process.stdout.write("\x1b8"); // restore to original position (correct column)
     process.stdout.write("\x1b7"); // re-save for final restore after drawing
+    const cols = process.stdout.columns || 80;
     for (let i = menuScroll; i < scrollEnd; i++) {
       const { cmd, desc } = menuFiltered[i];
       process.stdout.write("\n\x1b[2K");
       if (i === menuIdx) {
-        process.stdout.write(`  \x1b[7m ${cmd} \x1b[27m \x1b[90m${desc}\x1b[39m`);
+        // ` [inv] cmd [/inv] desc` — visible prefix length: 1 + 1 + cmd + 1 + 1 + 1
+        const prefixLen = cmd.length + 5;
+        const maxDesc = Math.max(0, cols - prefixLen);
+        const d = desc.length > maxDesc ? desc.slice(0, maxDesc - 1) + "…" : desc;
+        process.stdout.write(` \x1b[7m ${cmd} \x1b[27m \x1b[90m${d}\x1b[39m`);
       } else {
-        process.stdout.write(`   \x1b[90m${cmd}  ${desc}\x1b[39m`);
+        // `  cmd  desc` — visible prefix length: 2 + cmd + 2
+        const prefixLen = cmd.length + 4;
+        const maxDesc = Math.max(0, cols - prefixLen);
+        const d = desc.length > maxDesc ? desc.slice(0, maxDesc - 1) + "…" : desc;
+        process.stdout.write(`  \x1b[90m${cmd}  ${d}\x1b[39m`);
       }
     }
     if (menuFiltered.length > maxShow) {
       const above = menuScroll;
       const below = menuFiltered.length - scrollEnd;
       const hint = above > 0 && below > 0 ? `↑${above} ↓${below}` : above > 0 ? `↑${above}` : `↓${below}`;
-      process.stdout.write(`\n\x1b[2K  \x1b[90m… ${hint} more\x1b[39m`);
+      process.stdout.write(`\n\x1b[2K \x1b[90m… ${hint} more\x1b[39m`);
     }
     menuLines = totalLines;
     process.stdout.write("\x1b8"); // restore cursor
@@ -534,8 +544,13 @@ ${chalk.bold("REPL Commands:")}
     }
     const prefix = line.toLowerCase();
     menuFiltered = cmdEntries.filter((e) => e.cmd.startsWith(prefix));
-    menuIdx = Math.min(menuIdx, Math.max(0, menuFiltered.length - 1));
-    menuScroll = 0;
+    if (prefix !== lastFilterPrefix) {
+      menuIdx = 0;
+      menuScroll = 0;
+      lastFilterPrefix = prefix;
+    } else {
+      menuIdx = Math.min(menuIdx, Math.max(0, menuFiltered.length - 1));
+    }
     renderMenu();
   }
 
@@ -605,8 +620,11 @@ ${chalk.bold("REPL Commands:")}
       }
     }
 
+    const isHistoryNav = menuFiltered.length === 0 && key && (key.name === "up" || key.name === "down");
     origTtyWrite(s, key);
-    setImmediate(() => updateMenu());
+    if (!isHistoryNav) {
+      setImmediate(() => updateMenu());
+    }
   };
 
   rl.prompt();
@@ -1091,7 +1109,12 @@ function handleBuiltinCommand(
         console.log(chalk.bold("\nLoaded Skills:"));
         for (const s of skills) {
           const src = chalk.dim(`[${s.source}]`);
-          console.log(`  /${s.name} ${src} ${s.description || ""}`);
+          const cols = process.stdout.columns || 80;
+          const prefixLen = `  /${s.name} [${s.source}] `.length;
+          const maxDesc = Math.max(20, cols - prefixLen - 4);
+          const rawDesc = s.description || "";
+          const desc = rawDesc.length > maxDesc ? rawDesc.slice(0, maxDesc - 1) + "…" : rawDesc;
+          console.log(`  /${s.name} ${src} ${desc}`);
         }
       }
       console.log(

@@ -65,7 +65,7 @@ export function listSessions(): SessionMetadata[] {
         return null;
       }
     })
-    .filter((m): m is SessionMetadata => m !== null)
+    .filter((m): m is SessionMetadata => m !== null && typeof m.updatedAt === "string" && typeof m.id === "string")
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 20);
 }
