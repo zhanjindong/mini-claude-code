@@ -1,10 +1,83 @@
 // Computer action handlers
 
+import { execFileSync } from "node:child_process";
 import type { ToolInput } from "../../types.js";
-import { getDriver } from "./platform.js";
+import { getDriver, getTerminalAppName } from "./platform.js";
 import { analyzeScreenshot } from "./vlm.js";
+import { tryAcquire } from "./lock.js";
 
 type ProgressCallback = (msg: string) => void;
+
+let permissionsChecked = false;
+
+/** Reset permission check state (for testing) */
+export function resetPermissionsCheck(): void {
+  permissionsChecked = false;
+}
+
+/** Skip permission check (for testing with mock drivers) */
+export function skipPermissionsCheck(): void {
+  permissionsChecked = true;
+}
+
+/**
+ * One-time check that screencapture and cliclick are available and have necessary permissions.
+ * Returns null if OK, or a diagnostic error string.
+ */
+function checkPermissions(): string | null {
+  if (permissionsChecked) return null;
+  permissionsChecked = true;
+
+  const terminal = getTerminalAppName();
+  const issues: string[] = [];
+
+  // Check cliclick exists
+  try {
+    execFileSync("which", ["cliclick"], { encoding: "utf-8", timeout: 5000 });
+  } catch {
+    let installHint = "cliclick is not installed.";
+    // Check if Homebrew is available
+    try {
+      execFileSync("which", ["brew"], { encoding: "utf-8", timeout: 3000 });
+      installHint += "\nInstall with: brew install cliclick";
+    } catch {
+      installHint += "\nInstall Homebrew first (https://brew.sh), then: brew install cliclick";
+    }
+    issues.push(installHint);
+  }
+
+  // Check cliclick accessibility permission (try a harmless cursor position query)
+  if (issues.length === 0) {
+    try {
+      execFileSync("cliclick", ["p:"], { encoding: "utf-8", timeout: 5000 });
+    } catch (err: any) {
+      const combined = ((err.stderr || "") + (err.stdout || "") + (err.message || "")).toLowerCase();
+      if (combined.includes("accessibility") || combined.includes("trusted")) {
+        issues.push(
+          `Accessibility permission required for cliclick.\nFix: System Settings → Privacy & Security → Accessibility → enable ${terminal}\nThen restart the terminal.`
+        );
+      }
+    }
+  }
+
+  // Check screencapture permission (capture to /dev/null)
+  try {
+    execFileSync("screencapture", ["-x", "-t", "png", "/dev/null"], {
+      timeout: 5000,
+      stdio: "pipe",
+    });
+  } catch {
+    issues.push(
+      `Screen Recording permission required.\nFix: System Settings → Privacy & Security → Screen Recording → enable ${terminal}\nThen restart the terminal.`
+    );
+  }
+
+  return issues.length > 0 ? issues.join("\n\n") : null;
+}
+
+const TERMINAL_IGNORE_HINT =
+  "IMPORTANT: The screenshot may include a terminal window running this CLI tool — ignore it completely. " +
+  "Focus only on the other application windows and UI elements visible on screen.";
 
 async function takeAndAnalyze(
   prompt: string,
@@ -15,7 +88,8 @@ async function takeAndAnalyze(
   const { base64, width, height } = await driver.screenshot();
 
   onProgress?.("  🔍 Analyzing screenshot with VLM...");
-  const analysis = await analyzeScreenshot(base64, prompt);
+  const fullPrompt = `${TERMINAL_IGNORE_HINT}\n\n${prompt}`;
+  const analysis = await analyzeScreenshot(base64, fullPrompt);
   return `Screenshot (${width}x${height}):\n${analysis}`;
 }
 
@@ -178,6 +252,18 @@ export async function dispatch(
   const handler = ACTIONS[action];
   if (!handler) {
     return `Error: Unknown action '${action}'. Valid actions: ${Object.keys(ACTIONS).join(", ")}`;
+  }
+
+  // One-time permission check
+  const permError = checkPermissions();
+  if (permError) {
+    return `Error: Computer Use prerequisites not met:\n\n${permError}`;
+  }
+
+  // Acquire session lock (prevents multiple instances from controlling desktop)
+  const lockError = tryAcquire();
+  if (lockError) {
+    return `Error: ${lockError}`;
   }
 
   try {

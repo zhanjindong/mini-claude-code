@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { parseKeyCombo } from "../src/tools/computer/key-mapping.js";
 import { setDriver, getTerminalAppName, detectPermissionError, type DesktopDriver } from "../src/tools/computer/platform.js";
-import { dispatch } from "../src/tools/computer/actions.js";
+import { dispatch, skipPermissionsCheck } from "../src/tools/computer/actions.js";
 import { resetVlmClient } from "../src/tools/computer/vlm.js";
 
 // --- key-mapping tests ---
@@ -137,6 +137,7 @@ describe("Computer actions", () => {
   beforeEach(() => {
     mockDriver = createMockDriver();
     setDriver(mockDriver);
+    skipPermissionsCheck(); // skip real cliclick/screencapture checks in test
     __resetMockConfig();
     resetVlmClient();
   });
