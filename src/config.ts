@@ -24,6 +24,8 @@ export interface MccConfig {
   vlmApiKey?: string;
   /** VLM base URL. */
   vlmBaseURL?: string;
+  /** Screen understanding strategy: "auto" (accessibility first, VLM fallback), "accessibility" (only), "vlm" (only). */
+  screenStrategy?: "auto" | "accessibility" | "vlm";
 }
 
 /**
@@ -41,6 +43,7 @@ export interface ResolvedConfig {
   vlmModel: string;
   vlmApiKey: string;
   vlmBaseURL: string;
+  screenStrategy: "auto" | "accessibility" | "vlm";
 }
 
 const defaults: ResolvedConfig = {
@@ -55,6 +58,7 @@ const defaults: ResolvedConfig = {
   vlmModel: "",
   vlmApiKey: "",
   vlmBaseURL: "",
+  screenStrategy: "auto",
 };
 
 // --- T-02: File reading and merging ---
@@ -102,6 +106,12 @@ function readEnvConfig(): Partial<MccConfig & { apiKey?: string }> {
   if (process.env.MCC_VLM_BASE_URL) {
     env.vlmBaseURL = process.env.MCC_VLM_BASE_URL;
   }
+  if (process.env.MCC_SCREEN_STRATEGY) {
+    const s = process.env.MCC_SCREEN_STRATEGY;
+    if (s === "auto" || s === "accessibility" || s === "vlm") {
+      (env as any).screenStrategy = s;
+    }
+  }
 
   return env;
 }
@@ -126,6 +136,7 @@ function mergeConfig(
   if ((layer as any).vlmModel !== undefined) merged.vlmModel = (layer as any).vlmModel;
   if ((layer as any).vlmApiKey !== undefined) merged.vlmApiKey = (layer as any).vlmApiKey;
   if ((layer as any).vlmBaseURL !== undefined) merged.vlmBaseURL = (layer as any).vlmBaseURL;
+  if ((layer as any).screenStrategy !== undefined) merged.screenStrategy = (layer as any).screenStrategy;
   if (layer.permissions !== undefined) {
     merged.permissions = Object.assign({}, base.permissions, layer.permissions);
   }

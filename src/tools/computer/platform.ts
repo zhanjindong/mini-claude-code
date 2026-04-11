@@ -5,6 +5,8 @@ import { readFileSync, unlinkSync, mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseKeyCombo } from "./key-mapping.js";
+import type { AccessibilitySnapshot, AXElement, AppInfo } from "./accessibility.js";
+import { getAccessibilityTree as queryAccessibilityTree, getElementAtPoint as queryElementAtPoint, listVisibleApps as queryListApps, activateApp as queryActivateApp } from "./accessibility.js";
 
 export interface DesktopDriver {
   screenshot(width?: number): Promise<{ base64: string; width: number; height: number }>;
@@ -18,6 +20,14 @@ export interface DesktopDriver {
   scroll(direction: string, amount: number): Promise<void>;
   getScreenSize(): Promise<{ width: number; height: number }>;
   getCursorPosition(): Promise<{ x: number; y: number }>;
+  /** Query the accessibility tree of an app. If appName omitted, uses frontmost app. */
+  getAccessibilityTree?(appName?: string): Promise<{ snapshot: AccessibilitySnapshot; rawTree: string } | null>;
+  /** Query the UI element at a specific screen coordinate. Returns null if unsupported. */
+  getElementAtPoint?(x: number, y: number): Promise<AXElement | null>;
+  /** List all visible applications and their windows. */
+  listApps?(): Promise<AppInfo[] | null>;
+  /** Activate (bring to front) a specific application. */
+  activateApp?(appName: string): Promise<boolean>;
 }
 
 const CLICLICK_NOT_FOUND =
@@ -389,6 +399,22 @@ export class MacOSDriver implements DesktopDriver {
       return { x: parseInt(match[1], 10), y: parseInt(match[2], 10) };
     }
     return { x: 0, y: 0 };
+  }
+
+  async getAccessibilityTree(appName?: string): Promise<{ snapshot: AccessibilitySnapshot; rawTree: string } | null> {
+    return queryAccessibilityTree(appName);
+  }
+
+  async getElementAtPoint(x: number, y: number): Promise<AXElement | null> {
+    return queryElementAtPoint(x, y);
+  }
+
+  async listApps(): Promise<AppInfo[] | null> {
+    return queryListApps();
+  }
+
+  async activateApp(appName: string): Promise<boolean> {
+    return queryActivateApp(appName);
   }
 }
 

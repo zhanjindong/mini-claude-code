@@ -3,6 +3,8 @@ import { parseKeyCombo } from "../src/tools/computer/key-mapping.js";
 import { setDriver, getTerminalAppName, detectPermissionError, type DesktopDriver } from "../src/tools/computer/platform.js";
 import { dispatch, skipPermissionsCheck } from "../src/tools/computer/actions.js";
 import { resetVlmClient } from "../src/tools/computer/vlm.js";
+import { parseTreeOutput, isTreeSufficient, searchTree, formatTreeForLLM } from "../src/tools/computer/accessibility.js";
+import { release as releaseLock } from "../src/tools/computer/lock.js";
 
 // --- key-mapping tests ---
 
@@ -82,6 +84,21 @@ function createMockDriver(): DesktopDriver & { calls: Array<{ method: string; ar
     scroll: vi.fn(record("scroll")),
     getScreenSize: vi.fn().mockResolvedValue({ width: 1920, height: 1080 }),
     getCursorPosition: vi.fn().mockResolvedValue({ x: 100, y: 200 }),
+    getAccessibilityTree: vi.fn().mockResolvedValue({
+      snapshot: { frontmostApp: "TestApp", windows: [], elementCount: 15, timestamp: Date.now() },
+      rawTree: '[App: TestApp]\n[Window: "Main" at (0,0) 1920x1080]\n  [AXButton "OK" at(100,200) 80x30]\n  [AXTextField "Name" at(100,250) 200x30 value="hello"]\n  [AXStaticText "Label" at(100,300) 100x20]',
+    }),
+    getElementAtPoint: vi.fn().mockResolvedValue({
+      role: "AXButton", title: "OK", value: "", description: "",
+      position: { x: 100, y: 200 }, size: { width: 80, height: 30 },
+      enabled: true, focused: false,
+    }),
+    listApps: vi.fn().mockResolvedValue([
+      { name: "Finder", windowCount: 1, windows: ["Downloads"] },
+      { name: "Safari", windowCount: 2, windows: ["GitHub", "Google"] },
+      { name: "WeChat", windowCount: 1, windows: ["微信"] },
+    ]),
+    activateApp: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -100,6 +117,7 @@ vi.mock("../src/config.js", () => {
     vlmModel: "",
     vlmApiKey: "",
     vlmBaseURL: "",
+    screenStrategy: "auto",
   };
   return {
     getConfig: () => _config,
@@ -121,6 +139,7 @@ vi.mock("../src/config.js", () => {
         vlmModel: "",
         vlmApiKey: "",
         vlmBaseURL: "",
+        screenStrategy: "auto",
       };
     },
   };
@@ -143,6 +162,7 @@ describe("Computer actions", () => {
   });
 
   afterEach(() => {
+    releaseLock();
     vi.restoreAllMocks();
   });
 
@@ -183,12 +203,13 @@ describe("Computer actions", () => {
     expect(mockDriver.screenshot).not.toHaveBeenCalled();
   });
 
-  it("left_click action with default screenshot_after", async () => {
+  it("left_click action with default screenshot_after uses accessibility tree", async () => {
     const result = await dispatch({ action: "left_click", x: 50, y: 75 });
     expect(mockDriver.leftClick).toHaveBeenCalledWith(50, 75);
-    // screenshot is called because screenshot_after defaults to true
-    expect(mockDriver.screenshot).toHaveBeenCalled();
+    // In auto mode, accessibility tree is used instead of VLM screenshot
+    expect(mockDriver.getAccessibilityTree).toHaveBeenCalled();
     expect(result).toContain("Clicked at (50, 75)");
+    expect(result).toContain("Screen Context (accessibility");
   });
 
   it("right_click action", async () => {
@@ -466,5 +487,219 @@ describe("Permission error detection", () => {
       expect(result).toContain("Screenshot file is empty");
       expect(result).toContain("System Settings");
     });
+  });
+});
+
+// --- Accessibility module tests ---
+
+describe("Accessibility tree parsing", () => {
+  it("parses tree output with app, window, and elements", () => {
+    const raw = `APP:Safari
+WIN:GitHub|100,200|1440x900
+  [AXButton "Back" at(112,252) 32x28]
+  [AXTextField "Address" at(200,248) 800x36 value="https://github.com"]
+COUNT:2`;
+    const snapshot = parseTreeOutput(raw);
+    expect(snapshot.frontmostApp).toBe("Safari");
+    expect(snapshot.windows).toHaveLength(1);
+    expect(snapshot.windows[0].title).toBe("GitHub");
+    expect(snapshot.windows[0].position).toEqual({ x: 100, y: 200 });
+    expect(snapshot.windows[0].size).toEqual({ width: 1440, height: 900 });
+    expect(snapshot.elementCount).toBe(2);
+  });
+
+  it("parses empty tree output", () => {
+    const raw = `APP:Game
+WIN:Level 1|0,0|800x600
+COUNT:0`;
+    const snapshot = parseTreeOutput(raw);
+    expect(snapshot.frontmostApp).toBe("Game");
+    expect(snapshot.elementCount).toBe(0);
+  });
+
+  it("handles missing fields gracefully", () => {
+    const raw = `APP:Test
+WIN:||
+COUNT:0`;
+    const snapshot = parseTreeOutput(raw);
+    expect(snapshot.frontmostApp).toBe("Test");
+    expect(snapshot.windows[0].title).toBe("");
+  });
+});
+
+describe("isTreeSufficient", () => {
+  it("returns false for empty tree", () => {
+    const snapshot = { frontmostApp: "App", windows: [], elementCount: 0, timestamp: 0 };
+    expect(isTreeSufficient(snapshot, "")).toBe(false);
+  });
+
+  it("returns false for tree with too few elements", () => {
+    const snapshot = { frontmostApp: "App", windows: [], elementCount: 2, timestamp: 0 };
+    expect(isTreeSufficient(snapshot, '[AXButton "OK"]')).toBe(false);
+  });
+
+  it("returns true for tree with enough elements and text", () => {
+    const snapshot = { frontmostApp: "App", windows: [], elementCount: 10, timestamp: 0 };
+    const tree = '[AXButton "OK" at(10,20)]\n[AXTextField "Name" value="hello"]\n[AXStaticText "Label"]';
+    expect(isTreeSufficient(snapshot, tree)).toBe(true);
+  });
+
+  it("returns false for tree with many elements but no text", () => {
+    const snapshot = { frontmostApp: "App", windows: [], elementCount: 10, timestamp: 0 };
+    const tree = "[AXGroup]\n[AXGroup]\n[AXGroup]";
+    expect(isTreeSufficient(snapshot, tree)).toBe(false);
+  });
+});
+
+describe("searchTree", () => {
+  const tree = '[AXButton "Save" at(100,200) 80x30]\n[AXButton "Cancel" at(200,200) 80x30]\n[AXTextField "Name" value="John"]';
+
+  it("finds elements by title", () => {
+    const matches = searchTree(tree, "Save");
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toContain("Save");
+  });
+
+  it("finds elements case-insensitively", () => {
+    const matches = searchTree(tree, "save");
+    expect(matches).toHaveLength(1);
+  });
+
+  it("returns empty for no match", () => {
+    const matches = searchTree(tree, "Delete");
+    expect(matches).toHaveLength(0);
+  });
+
+  it("finds multiple matches", () => {
+    const matches = searchTree(tree, "AXButton");
+    expect(matches).toHaveLength(2);
+  });
+});
+
+// --- Accessibility action dispatch tests ---
+
+describe("Accessibility actions", () => {
+  let mockDriver: ReturnType<typeof createMockDriver>;
+
+  beforeEach(() => {
+    mockDriver = createMockDriver();
+    setDriver(mockDriver);
+    skipPermissionsCheck();
+    __resetMockConfig();
+    resetVlmClient();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("inspect action returns accessibility tree", async () => {
+    const result = await dispatch({ action: "inspect" });
+    expect(result).toContain("UI Inspection");
+    expect(result).toContain("TestApp");
+    expect(result).toContain("15 elements");
+    expect(mockDriver.getAccessibilityTree).toHaveBeenCalled();
+  });
+
+  it("inspect returns error when accessibility unavailable", async () => {
+    mockDriver.getAccessibilityTree = undefined as any;
+    delete (mockDriver as any).getAccessibilityTree;
+    const result = await dispatch({ action: "inspect" });
+    expect(result).toContain("not supported");
+  });
+
+  it("inspect returns message when tree is null", async () => {
+    mockDriver.getAccessibilityTree!.mockResolvedValue(null);
+    const result = await dispatch({ action: "inspect" });
+    expect(result).toContain("No accessibility data");
+  });
+
+  it("find_element returns matching elements", async () => {
+    const result = await dispatch({ action: "find_element", query: "OK" });
+    expect(result).toContain("OK");
+    expect(result).toContain("Found");
+  });
+
+  it("find_element returns error without query", async () => {
+    const result = await dispatch({ action: "find_element" });
+    expect(result).toContain("query");
+    expect(result).toContain("required");
+  });
+
+  it("find_element returns no-match message", async () => {
+    const result = await dispatch({ action: "find_element", query: "NonExistent" });
+    expect(result).toContain("No UI element found");
+  });
+
+  it("left_click uses accessibility tree instead of VLM in auto mode", async () => {
+    __setMockConfig({ screenStrategy: "auto" });
+    const result = await dispatch({ action: "left_click", x: 100, y: 200 });
+    expect(result).toContain("Clicked at (100, 200)");
+    expect(result).toContain("Screen Context (accessibility");
+    expect(mockDriver.getAccessibilityTree).toHaveBeenCalled();
+    // VLM should NOT be called since accessibility tree is sufficient
+    expect(mockDriver.screenshot).not.toHaveBeenCalled();
+  });
+
+  it("left_click falls back to VLM when tree is insufficient", async () => {
+    __setMockConfig({ screenStrategy: "auto" });
+    mockDriver.getAccessibilityTree!.mockResolvedValue({
+      snapshot: { frontmostApp: "Game", windows: [], elementCount: 1, timestamp: Date.now() },
+      rawTree: "[AXGroup]",
+    });
+    const result = await dispatch({ action: "left_click", x: 100, y: 200 });
+    expect(result).toContain("Clicked at (100, 200)");
+    // Should fall back to VLM screenshot
+    expect(mockDriver.screenshot).toHaveBeenCalled();
+  });
+
+  it("left_click uses VLM when strategy is vlm", async () => {
+    __setMockConfig({ screenStrategy: "vlm" });
+    const result = await dispatch({ action: "left_click", x: 100, y: 200 });
+    expect(result).toContain("Clicked at (100, 200)");
+    expect(mockDriver.getAccessibilityTree).not.toHaveBeenCalled();
+    expect(mockDriver.screenshot).toHaveBeenCalled();
+  });
+
+  it("list_apps returns visible applications", async () => {
+    const result = await dispatch({ action: "list_apps" });
+    expect(result).toContain("Visible Applications");
+    expect(result).toContain("Finder");
+    expect(result).toContain("Safari");
+    expect(result).toContain("WeChat");
+    expect(result).toContain("Downloads");
+    expect(result).toContain("GitHub");
+    expect(mockDriver.listApps).toHaveBeenCalled();
+  });
+
+  it("activate_app brings app to front", async () => {
+    const result = await dispatch({ action: "activate_app", app_name: "Finder" });
+    expect(result).toContain("Activated app: Finder");
+    expect(mockDriver.activateApp).toHaveBeenCalledWith("Finder");
+  });
+
+  it("activate_app returns error without app_name", async () => {
+    const result = await dispatch({ action: "activate_app" });
+    expect(result).toContain("app_name");
+    expect(result).toContain("required");
+  });
+
+  it("activate_app returns error for unknown app", async () => {
+    mockDriver.activateApp!.mockResolvedValue(false);
+    const result = await dispatch({ action: "activate_app", app_name: "NonExistentApp" });
+    expect(result).toContain("Could not activate");
+    expect(result).toContain("list_apps");
+  });
+
+  it("inspect with app_name targets specific app", async () => {
+    const result = await dispatch({ action: "inspect", app_name: "Finder" });
+    expect(result).toContain("UI Inspection");
+    expect(mockDriver.getAccessibilityTree).toHaveBeenCalledWith("Finder");
+  });
+
+  it("find_element with app_name targets specific app", async () => {
+    const result = await dispatch({ action: "find_element", query: "OK", app_name: "Finder" });
+    expect(result).toContain("Found");
+    expect(mockDriver.getAccessibilityTree).toHaveBeenCalledWith("Finder");
   });
 });

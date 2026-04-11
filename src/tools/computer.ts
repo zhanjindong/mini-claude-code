@@ -7,14 +7,18 @@ export const ComputerTool: ToolDefinition = {
   name: "Computer",
   permissionLevel: "execute",
   description:
-    "Control the computer desktop: take screenshots, move/click the mouse, type text, press keys, scroll, and drag. Screenshots are automatically analyzed by a vision model to describe screen content. Requires: macOS + cliclick (brew install cliclick). Set MCC_API_KEY for VLM screenshot analysis.",
+    "Control the computer desktop: take screenshots, inspect UI elements, move/click the mouse, type text, press keys, scroll, and drag. Uses accessibility APIs for fast screen understanding (free, ~100ms), with VLM screenshot analysis as fallback. 'inspect' reads the UI element tree without screenshots. 'find_element' searches for UI elements by name. Requires: macOS + cliclick (brew install cliclick).",
   inputSchema: {
     type: "object",
     properties: {
       action: {
         type: "string",
         enum: [
+          "list_apps",
+          "activate_app",
           "screenshot",
+          "inspect",
+          "find_element",
           "mouse_move",
           "left_click",
           "right_click",
@@ -26,7 +30,7 @@ export const ComputerTool: ToolDefinition = {
           "cursor_position",
         ],
         description:
-          "The desktop action to perform. 'screenshot' captures and analyzes the screen. 'mouse_move' moves the cursor. 'left_click'/'right_click'/'double_click' click at coordinates. 'drag' drags between two points. 'type' inputs text. 'key' presses keys/combos (e.g. 'cmd+c', 'enter'). 'scroll' scrolls in a direction. 'cursor_position' reports current cursor location.",
+          "The desktop action to perform. 'list_apps' lists all visible apps and their windows. 'activate_app' brings an app to the foreground (requires app_name). 'inspect' reads the UI element tree via accessibility APIs (fast, free — preferred over screenshot; optional app_name to target a specific app). 'find_element' searches for a UI element by name (optional app_name). 'screenshot' captures and analyzes the screen via VLM (slower, use when accessibility is insufficient). Other actions: 'mouse_move', 'left_click'/'right_click'/'double_click', 'drag', 'type', 'key', 'scroll', 'cursor_position'.",
       },
       x: {
         type: "number",
@@ -58,10 +62,18 @@ export const ComputerTool: ToolDefinition = {
         type: "number",
         description: "Scroll repeat count (default: 3)",
       },
+      app_name: {
+        type: "string",
+        description: "Target application name for 'activate_app', 'inspect', 'find_element'. If omitted for inspect/find_element, uses the frontmost app. Use 'list_apps' first to see available app names.",
+      },
+      query: {
+        type: "string",
+        description: "Text to search for in UI elements (for 'find_element' action). Matches element titles, values, and descriptions.",
+      },
       screenshot_after: {
         type: "boolean",
         description:
-          "Whether to take and analyze a screenshot after the action (default: true). Set to false for faster execution when visual feedback is not needed.",
+          "Whether to get screen context after the action (default: true). Uses accessibility tree first, falls back to VLM screenshot. Set to false for faster execution when feedback is not needed.",
       },
     },
     required: ["action"],

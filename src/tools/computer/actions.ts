@@ -5,6 +5,8 @@ import type { ToolInput } from "../../types.js";
 import { getDriver, getTerminalAppName } from "./platform.js";
 import { analyzeScreenshot } from "./vlm.js";
 import { tryAcquire } from "./lock.js";
+import { formatTreeForLLM, isTreeSufficient, searchTree } from "./accessibility.js";
+import { getConfig } from "../../config.js";
 
 type ProgressCallback = (msg: string) => void;
 
@@ -93,6 +95,46 @@ async function takeAndAnalyze(
   return `Screenshot (${width}x${height}):\n${analysis}`;
 }
 
+/**
+ * Get screen context using accessibility tree (fast, free) with VLM fallback.
+ * Strategy: "auto" = accessibility first, fallback to VLM if tree is insufficient.
+ *           "accessibility" = accessibility only, no VLM.
+ *           "vlm" = VLM only (original behavior).
+ */
+async function getScreenContext(
+  prompt: string,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const driver = getDriver();
+  const strategy = (getConfig() as any).screenStrategy || "auto";
+
+  // Try accessibility tree first (unless forced to vlm-only)
+  if (strategy !== "vlm" && driver.getAccessibilityTree) {
+    onProgress?.("  🌳 Reading UI elements...");
+    try {
+      const result = await driver.getAccessibilityTree();
+      if (result) {
+        const { snapshot, rawTree } = result;
+        if (strategy === "accessibility" || isTreeSufficient(snapshot, rawTree)) {
+          const formatted = formatTreeForLLM(rawTree);
+          return `Screen Context (accessibility, ${snapshot.elementCount} elements):\n${formatted}`;
+        }
+        // Tree exists but insufficient — will fallback to VLM
+        onProgress?.("  ⚡ Accessibility tree too shallow, falling back to VLM...");
+      }
+    } catch {
+      // Accessibility failed — fall through to VLM
+    }
+  }
+
+  // Fallback to screenshot + VLM
+  if (strategy !== "accessibility") {
+    return takeAndAnalyze(prompt, onProgress);
+  }
+
+  return "No screen context available (accessibility tree was empty or insufficient).";
+}
+
 async function actionScreenshot(
   _input: ToolInput,
   onProgress?: ProgressCallback
@@ -120,7 +162,7 @@ async function actionLeftClick(
 
   const screenshotAfter = input.screenshot_after !== false;
   if (screenshotAfter) {
-    const analysis = await takeAndAnalyze(
+    const analysis = await getScreenContext(
       `Describe what changed on screen after clicking at coordinates (${x}, ${y}). Focus on the area around the click point.`,
       onProgress
     );
@@ -139,7 +181,7 @@ async function actionRightClick(
 
   const screenshotAfter = input.screenshot_after !== false;
   if (screenshotAfter) {
-    const analysis = await takeAndAnalyze(
+    const analysis = await getScreenContext(
       `Describe what changed on screen after right-clicking at coordinates (${x}, ${y}). Focus on any context menu that appeared.`,
       onProgress
     );
@@ -158,7 +200,7 @@ async function actionDoubleClick(
 
   const screenshotAfter = input.screenshot_after !== false;
   if (screenshotAfter) {
-    const analysis = await takeAndAnalyze(
+    const analysis = await getScreenContext(
       `Describe what changed on screen after double-clicking at coordinates (${x}, ${y}).`,
       onProgress
     );
@@ -179,7 +221,7 @@ async function actionDrag(
 
   const screenshotAfter = input.screenshot_after !== false;
   if (screenshotAfter) {
-    const analysis = await takeAndAnalyze(
+    const analysis = await getScreenContext(
       `Describe what changed on screen after dragging from (${sx}, ${sy}) to (${ex}, ${ey}).`,
       onProgress
     );
@@ -210,7 +252,7 @@ async function actionScroll(
 
   const screenshotAfter = input.screenshot_after !== false;
   if (screenshotAfter) {
-    const analysis = await takeAndAnalyze(
+    const analysis = await getScreenContext(
       `Describe the current screen content after scrolling ${direction}. What is now visible?`,
       onProgress
     );
@@ -222,6 +264,84 @@ async function actionScroll(
 async function actionCursorPosition(): Promise<string> {
   const { x, y } = await getDriver().getCursorPosition();
   return `Cursor position: (${x}, ${y})`;
+}
+
+async function actionListApps(
+  _input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const driver = getDriver();
+  if (!driver.listApps) {
+    return "App listing not supported on this platform.";
+  }
+  onProgress?.("  📋 Listing visible applications...");
+  const apps = await driver.listApps();
+  if (!apps || apps.length === 0) {
+    return "No visible applications found.";
+  }
+  const lines = apps.map((app) => {
+    const winStr = app.windows.length > 0
+      ? `: ${app.windows.map((w) => `"${w}"`).join(", ")}`
+      : "";
+    return `- ${app.name} (${app.windowCount} window${app.windowCount !== 1 ? "s" : ""})${winStr}`;
+  });
+  return `Visible Applications (${apps.length}):\n${lines.join("\n")}`;
+}
+
+async function actionActivateApp(input: ToolInput): Promise<string> {
+  const appName = input.app_name as string;
+  if (!appName) {
+    return "Error: 'app_name' parameter is required for activate_app action.";
+  }
+  const driver = getDriver();
+  if (!driver.activateApp) {
+    return "App activation not supported on this platform.";
+  }
+  const ok = await driver.activateApp(appName);
+  if (!ok) {
+    return `Error: Could not activate app "${appName}". It may not be running. Use list_apps to see available apps.`;
+  }
+  return `Activated app: ${appName}`;
+}
+
+async function actionInspect(
+  input: ToolInput,
+  onProgress?: ProgressCallback
+): Promise<string> {
+  const driver = getDriver();
+  if (!driver.getAccessibilityTree) {
+    return "Accessibility inspection not supported on this platform.";
+  }
+  const appName = input.app_name as string | undefined;
+  onProgress?.(`  🌳 Inspecting UI elements${appName ? ` of ${appName}` : ""}...`);
+  const result = await driver.getAccessibilityTree(appName);
+  if (!result) {
+    return `No accessibility data available${appName ? ` for "${appName}"` : " for the frontmost application"}.`;
+  }
+  const { snapshot, rawTree } = result;
+  return `UI Inspection (${snapshot.frontmostApp}, ${snapshot.elementCount} elements):\n${formatTreeForLLM(rawTree)}`;
+}
+
+async function actionFindElement(input: ToolInput): Promise<string> {
+  const query = input.query as string;
+  if (!query) {
+    return "Error: 'query' parameter is required for find_element action.";
+  }
+  const driver = getDriver();
+  if (!driver.getAccessibilityTree) {
+    return "Accessibility not supported on this platform.";
+  }
+  const appName = input.app_name as string | undefined;
+  const result = await driver.getAccessibilityTree(appName);
+  if (!result) {
+    return `No accessibility data available${appName ? ` for "${appName}"` : ""}.`;
+  }
+  const matches = searchTree(result.rawTree, query);
+  if (matches.length === 0) {
+    return `No UI element found matching "${query}"${appName ? ` in ${appName}` : ""}.`;
+  }
+  const top = matches.slice(0, 10);
+  return `Found ${matches.length} element(s) matching "${query}":\n${top.join("\n")}`;
 }
 
 const ACTIONS: Record<
@@ -238,6 +358,10 @@ const ACTIONS: Record<
   key: actionKey,
   scroll: actionScroll,
   cursor_position: actionCursorPosition,
+  list_apps: actionListApps,
+  activate_app: actionActivateApp,
+  inspect: actionInspect,
+  find_element: actionFindElement,
 };
 
 export async function dispatch(
