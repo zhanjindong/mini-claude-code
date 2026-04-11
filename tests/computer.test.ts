@@ -94,9 +94,9 @@ function createMockDriver(): DesktopDriver & { calls: Array<{ method: string; ar
       enabled: true, focused: false,
     }),
     listApps: vi.fn().mockResolvedValue([
-      { name: "Finder", windowCount: 1, windows: ["Downloads"] },
-      { name: "Safari", windowCount: 2, windows: ["GitHub", "Google"] },
-      { name: "WeChat", windowCount: 1, windows: ["微信"] },
+      { name: "Finder", displayName: "访达", windowCount: 1, windows: ["Downloads"] },
+      { name: "Safari", displayName: "Safari", windowCount: 2, windows: ["GitHub", "Google"] },
+      { name: "WeChat", displayName: "微信", windowCount: 1, windows: ["微信"] },
     ]),
     activateApp: vi.fn().mockResolvedValue(true),
   };
@@ -601,17 +601,19 @@ describe("Accessibility actions", () => {
     expect(mockDriver.getAccessibilityTree).toHaveBeenCalled();
   });
 
-  it("inspect returns error when accessibility unavailable", async () => {
+  it("inspect falls back to VLM when accessibility unavailable", async () => {
     mockDriver.getAccessibilityTree = undefined as any;
     delete (mockDriver as any).getAccessibilityTree;
     const result = await dispatch({ action: "inspect" });
-    expect(result).toContain("not supported");
+    // Falls back to VLM screenshot (which shows "VLM 未配置" in test env)
+    expect(mockDriver.screenshot).toHaveBeenCalled();
   });
 
-  it("inspect returns message when tree is null", async () => {
+  it("inspect falls back to VLM when tree is null", async () => {
     mockDriver.getAccessibilityTree!.mockResolvedValue(null);
     const result = await dispatch({ action: "inspect" });
-    expect(result).toContain("No accessibility data");
+    // Falls back to VLM screenshot
+    expect(mockDriver.screenshot).toHaveBeenCalled();
   });
 
   it("find_element returns matching elements", async () => {
@@ -661,12 +663,13 @@ describe("Accessibility actions", () => {
     expect(mockDriver.screenshot).toHaveBeenCalled();
   });
 
-  it("list_apps returns visible applications", async () => {
+  it("list_apps returns visible applications with display names", async () => {
     const result = await dispatch({ action: "list_apps" });
     expect(result).toContain("Visible Applications");
-    expect(result).toContain("Finder");
-    expect(result).toContain("Safari");
-    expect(result).toContain("WeChat");
+    expect(result).toContain("Finder [访达]");
+    expect(result).toContain("WeChat [微信]");
+    expect(result).toContain("Safari"); // same name, no bracket
+    expect(result).not.toContain("Safari [Safari]");
     expect(result).toContain("Downloads");
     expect(result).toContain("GitHub");
     expect(mockDriver.listApps).toHaveBeenCalled();
@@ -695,6 +698,17 @@ describe("Accessibility actions", () => {
     const result = await dispatch({ action: "inspect", app_name: "Finder" });
     expect(result).toContain("UI Inspection");
     expect(mockDriver.getAccessibilityTree).toHaveBeenCalledWith("Finder");
+  });
+
+  it("inspect falls back to VLM when accessibility tree is too shallow", async () => {
+    __setMockConfig({ screenStrategy: "auto" });
+    mockDriver.getAccessibilityTree!.mockResolvedValue({
+      snapshot: { frontmostApp: "WeChat", windows: [], elementCount: 3, timestamp: Date.now() },
+      rawTree: "[App: WeChat]\n[AXButton]\n[AXButton]",
+    });
+    const result = await dispatch({ action: "inspect" });
+    // Should fallback to VLM screenshot since tree has no text content
+    expect(mockDriver.screenshot).toHaveBeenCalled();
   });
 
   it("find_element with app_name targets specific app", async () => {

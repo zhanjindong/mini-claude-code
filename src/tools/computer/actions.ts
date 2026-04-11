@@ -280,10 +280,13 @@ async function actionListApps(
     return "No visible applications found.";
   }
   const lines = apps.map((app) => {
+    const nameStr = app.displayName && app.displayName !== app.name
+      ? `${app.name} [${app.displayName}]`
+      : app.name;
     const winStr = app.windows.length > 0
       ? `: ${app.windows.map((w) => `"${w}"`).join(", ")}`
       : "";
-    return `- ${app.name} (${app.windowCount} window${app.windowCount !== 1 ? "s" : ""})${winStr}`;
+    return `- ${nameStr} (${app.windowCount} window${app.windowCount !== 1 ? "s" : ""})${winStr}`;
   });
   return `Visible Applications (${apps.length}):\n${lines.join("\n")}`;
 }
@@ -309,17 +312,40 @@ async function actionInspect(
   onProgress?: ProgressCallback
 ): Promise<string> {
   const driver = getDriver();
-  if (!driver.getAccessibilityTree) {
-    return "Accessibility inspection not supported on this platform.";
-  }
   const appName = input.app_name as string | undefined;
-  onProgress?.(`  🌳 Inspecting UI elements${appName ? ` of ${appName}` : ""}...`);
-  const result = await driver.getAccessibilityTree(appName);
-  if (!result) {
-    return `No accessibility data available${appName ? ` for "${appName}"` : " for the frontmost application"}.`;
+  const strategy = (getConfig() as any).screenStrategy || "auto";
+
+  // Try accessibility tree first
+  if (strategy !== "vlm" && driver.getAccessibilityTree) {
+    onProgress?.(`  🌳 Inspecting UI elements${appName ? ` of ${appName}` : ""}...`);
+    const result = await driver.getAccessibilityTree(appName);
+    if (result && isTreeSufficient(result.snapshot, result.rawTree)) {
+      const { snapshot, rawTree } = result;
+      return `UI Inspection (${snapshot.frontmostApp}, ${snapshot.elementCount} elements):\n${formatTreeForLLM(rawTree)}`;
+    }
+    // Tree too shallow — fallback
+    if (strategy !== "accessibility") {
+      onProgress?.("  ⚡ Accessibility tree too shallow, falling back to VLM screenshot...");
+      return takeAndAnalyze(
+        "Describe the current screen content in detail. List all visible windows, UI elements, text, buttons, and their approximate positions. Pay special attention to clickable elements like contact names, input fields, and buttons.",
+        onProgress
+      );
+    }
+    // accessibility-only mode, return what we have
+    if (result) {
+      return `UI Inspection (${result.snapshot.frontmostApp}, ${result.snapshot.elementCount} elements — tree is sparse, this app may use custom UI):\n${formatTreeForLLM(result.rawTree)}`;
+    }
   }
-  const { snapshot, rawTree } = result;
-  return `UI Inspection (${snapshot.frontmostApp}, ${snapshot.elementCount} elements):\n${formatTreeForLLM(rawTree)}`;
+
+  // VLM-only mode or no accessibility support
+  if (strategy === "vlm" || !driver.getAccessibilityTree) {
+    return takeAndAnalyze(
+      "Describe the current screen content in detail. List all visible windows, UI elements, text, buttons, and their approximate positions.",
+      onProgress
+    );
+  }
+
+  return `No screen data available${appName ? ` for "${appName}"` : ""}.`;
 }
 
 async function actionFindElement(input: ToolInput): Promise<string> {

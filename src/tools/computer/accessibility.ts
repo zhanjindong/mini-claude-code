@@ -34,6 +34,7 @@ export interface AccessibilitySnapshot {
 
 export interface AppInfo {
   name: string;
+  displayName: string;
   windowCount: number;
   windows: string[];
 }
@@ -350,7 +351,9 @@ export function parseTreeOutput(raw: string): AccessibilitySnapshot {
 export async function getAccessibilityTree(appName?: string): Promise<{ snapshot: AccessibilitySnapshot; rawTree: string } | null> {
   const scriptPath = join(tmpdir(), "mcc-ax-tree.scpt");
   try {
-    const script = buildTreeScript(appName);
+    // Resolve display name to process name if provided
+    const resolvedName = appName ? (await resolveAppName(appName) || appName) : undefined;
+    const script = buildTreeScript(resolvedName);
     writeFileSync(scriptPath, script, "utf-8");
 
     const raw = execFileSync("osascript", [scriptPath], {
@@ -489,6 +492,11 @@ export async function listVisibleApps(): Promise<AppInfo[] | null> {
   set visibleProcs to every process whose visible is true
   repeat with proc in visibleProcs
     set procName to name of proc
+    set dispName to procName
+    try
+      set dispName to displayed name of proc
+      if dispName is missing value then set dispName to procName
+    end try
     set winCount to count of windows of proc
     set winTitles to ""
     if winCount > 0 then
@@ -500,7 +508,7 @@ export async function listVisibleApps(): Promise<AppInfo[] | null> {
         end try
       end repeat
     end if
-    set output to output & procName & "|" & (winCount as text) & winTitles & linefeed
+    set output to output & procName & "||" & dispName & "|" & (winCount as text) & winTitles & linefeed
   end repeat
   return output
 end tell
@@ -516,18 +524,20 @@ end tell
     const apps: AppInfo[] = [];
     for (const line of raw.split("\n")) {
       if (!line.trim()) continue;
-      const parts = line.split("|");
-      const name = parts[0] || "";
-      const windowCount = parseInt(parts[1], 10) || 0;
-      // Window titles are after the first two parts, separated by empty strings from ||
+      // Format: name||displayName|windowCount||win1||win2...
+      // Split by || first to get segments
+      const segments = line.split("||");
+      const name = segments[0] || "";
+      // Second segment contains "displayName|count"
+      const meta = (segments[1] || "").split("|");
+      const displayName = meta[0] || name;
+      const windowCount = parseInt(meta[1], 10) || 0;
+      // Remaining segments are window titles
       const windows: string[] = [];
-      for (let i = 2; i < parts.length; i++) {
-        if (parts[i] === "" && i + 1 < parts.length) {
-          windows.push(parts[i + 1]);
-          i++; // skip next part (already consumed)
-        }
+      for (let i = 2; i < segments.length; i++) {
+        if (segments[i]) windows.push(segments[i]);
       }
-      apps.push({ name, windowCount, windows });
+      apps.push({ name, displayName, windowCount, windows });
     }
 
     return apps;
@@ -539,13 +549,42 @@ end tell
 }
 
 /**
+ * Resolve an app name (which may be a display name like "微信") to the actual process name ("WeChat").
+ * Tries process name first, then falls back to display name matching.
+ */
+export async function resolveAppName(appName: string): Promise<string | null> {
+  const apps = await listVisibleApps();
+  if (!apps) return null;
+
+  // Exact match on process name
+  const exact = apps.find((a) => a.name === appName);
+  if (exact) return exact.name;
+
+  // Exact match on display name
+  const byDisplay = apps.find((a) => a.displayName === appName);
+  if (byDisplay) return byDisplay.name;
+
+  // Case-insensitive match
+  const lower = appName.toLowerCase();
+  const byLower = apps.find(
+    (a) => a.name.toLowerCase() === lower || a.displayName.toLowerCase() === lower
+  );
+  if (byLower) return byLower.name;
+
+  return null;
+}
+
+/**
  * Activate (bring to front) a specific application by name.
+ * Supports both process names ("WeChat") and display names ("微信").
  * Returns true on success, false on failure.
  */
 export async function activateApp(appName: string): Promise<boolean> {
   const scriptPath = join(tmpdir(), "mcc-ax-activate.scpt");
   try {
-    const safeName = appName.replace(/"/g, '\\"');
+    // Resolve display name to process name if needed
+    const resolvedName = await resolveAppName(appName) || appName;
+    const safeName = resolvedName.replace(/"/g, '\\"');
     const script = `tell application "System Events"
   set targetProc to first process whose name is "${safeName}"
   set frontmost of targetProc to true
